@@ -49,33 +49,37 @@ export default function RevenueSection({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-            Gross revenue · {rangeLabel}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
+            Gross · {rangeLabel}
           </p>
-          <p className="mt-1 text-3xl font-bold tabular-nums text-emerald-600">
+          <p className="mt-1 truncate text-xl font-bold tabular-nums text-emerald-600 sm:text-3xl">
             {formatUsd(totalCents)}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">Paid Pro invoices only, $0 excluded</p>
+          <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">Paid invoices, $0 excluded</p>
         </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-            MRR (Stripe)
+        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
+            MRR
           </p>
-          <p className="mt-1 text-3xl font-bold tabular-nums">{formatUsd(revenue.mrrCents)}</p>
-          <p className="mt-1 text-xs text-neutral-500">
-            ARR {formatUsd(revenue.mrrCents * 12)} · active subs {revenue.activeSubscriptionCount}
+          <p className="mt-1 truncate text-xl font-bold tabular-nums sm:text-3xl">
+            {formatUsd(revenue.mrrCents)}
+          </p>
+          <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
+            ARR {formatUsd(revenue.mrrCents * 12)} · {revenue.activeSubscriptionCount} subs
           </p>
         </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-            All time gross
+        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
+            All time
           </p>
-          <p className="mt-1 text-3xl font-bold tabular-nums">
+          <p className="mt-1 truncate text-xl font-bold tabular-nums sm:text-3xl">
             {formatUsd(revenue.events.reduce((s, e) => s + e.cents, 0))}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">{revenue.events.length} paid invoices</p>
+          <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
+            {revenue.events.length} paid invoices
+          </p>
         </div>
       </div>
 

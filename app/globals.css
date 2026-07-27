@@ -6,4 +6,13 @@
 
 body {
   @apply bg-neutral-50 text-neutral-900 antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide horizontal scrollbars on mobile stat/tab strips */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

@@ -87,11 +87,11 @@ export default function Dashboard({
   return (
     <main className="mx-auto max-w-3xl px-4 pb-16">
       <header className="sticky top-0 z-20 -mx-4 border-b border-neutral-200 bg-neutral-50/95 px-4 pt-4 backdrop-blur">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">FieldVision</h1>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="shrink-0 text-lg font-bold sm:text-xl">FieldVision</h1>
+          <div className="no-scrollbar flex items-center gap-4 overflow-x-auto">
             {headerStats.map(s => (
-              <div key={s.label} className="text-right">
+              <div key={s.label} className="shrink-0 text-right">
                 <p
                   className={`text-sm font-bold tabular-nums leading-tight ${
                     s.accent ? 'text-emerald-600' : ''
@@ -99,22 +99,24 @@ export default function Dashboard({
                 >
                   {s.value}
                 </p>
-                <p className="text-[10px] uppercase tracking-wide text-neutral-400">{s.label}</p>
+                <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-neutral-400">
+                  {s.label}
+                </p>
               </div>
             ))}
           </div>
         </div>
 
-        <nav className="mt-3 flex gap-1 overflow-x-auto pb-2">
+        <nav className="no-scrollbar mt-2.5 flex gap-1 overflow-x-auto pb-2">
           {(Object.keys(TAB_LABEL) as Tab[]).map(t => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+              className={`min-h-11 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors active:scale-95 ${
                 tab === t
                   ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-500 hover:bg-neutral-200/60'
+                  : 'text-neutral-500 hover:bg-neutral-200/60 active:bg-neutral-200'
               }`}
             >
               {TAB_LABEL[t]}
@@ -137,8 +139,8 @@ export default function Dashboard({
                   key={k}
                   type="button"
                   onClick={() => setRange(k)}
-                  className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-colors ${
-                    range === k ? 'bg-white shadow-sm' : 'text-neutral-500'
+                  className={`min-h-10 flex-1 rounded-lg py-2 text-xs font-semibold transition-colors ${
+                    range === k ? 'bg-white shadow-sm' : 'text-neutral-500 active:bg-neutral-100'
                   }`}
                 >
                   {RANGE_LABEL[k]}

@@ -13,8 +13,8 @@ export default function ContactActions({
 }) {
   const base =
     size === 'lg'
-      ? 'flex-1 rounded-xl py-2.5 text-center text-sm font-semibold'
-      : 'rounded-lg px-2.5 py-1.5 text-center text-xs font-semibold';
+      ? 'flex-1 rounded-xl py-3 text-center text-sm font-semibold active:scale-[0.98]'
+      : 'flex min-h-9 min-w-14 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-semibold active:scale-95';
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
