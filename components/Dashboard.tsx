@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react';
 import { addDays, startOfDay } from '@/lib/dates';
 import type { UserRecord } from '@/lib/types';
+import type { RevenueSnapshot } from '@/lib/stripe-revenue';
 import CalendarView from './CalendarView';
 import Funnel from './Funnel';
+import RevenueSection from './RevenueSection';
 import TrendChart from './TrendChart';
 import UserTable from './UserTable';
 
@@ -17,7 +19,13 @@ const RANGE_LABEL: Record<RangeKey, string> = {
   custom: 'Custom',
 };
 
-export default function Dashboard({ users }: { users: UserRecord[] }) {
+export default function Dashboard({
+  users,
+  revenue,
+}: {
+  users: UserRecord[];
+  revenue: RevenueSnapshot;
+}) {
   const [range, setRange] = useState<RangeKey>('30d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -99,6 +107,18 @@ export default function Dashboard({ users }: { users: UserRecord[] }) {
       )}
 
       <div className="space-y-8">
+        <section>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+            Revenue · {RANGE_LABEL[range]}
+          </h2>
+          <RevenueSection
+            revenue={revenue}
+            from={from}
+            to={to}
+            rangeLabel={RANGE_LABEL[range]}
+          />
+        </section>
+
         <section>
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
             Funnel · {RANGE_LABEL[range]}

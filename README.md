@@ -27,6 +27,7 @@ npm run dev                  # http://localhost:3050
 |---|---|
 | `SUPABASE_URL` | The FieldVision Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Only used server side, never sent to the browser |
+| `STRIPE_SECRET_KEY` | Stripe secret key (same as Supabase). Powers gross revenue, MRR, and the revenue chart |
 | `ANALYTICS_PASSWORD` | Shared password for the login gate |
 
 ## Deploy to Vercel
