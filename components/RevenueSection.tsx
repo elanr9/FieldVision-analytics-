@@ -42,6 +42,19 @@ export default function RevenueSection({
     );
   }
 
+  if (revenue.error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+        <p className="text-sm font-semibold text-red-800">Stripe returned an error</p>
+        <p className="mt-1 break-words text-sm text-red-700">{revenue.error}</p>
+        <p className="mt-2 text-xs text-red-600">
+          Most common cause: STRIPE_SECRET_KEY is the publishable key (pk_live) instead of the
+          secret key (sk_live), or the key was pasted with extra characters.
+        </p>
+      </div>
+    );
+  }
+
   const chartData = byDay.map(d => ({
     ...d,
     dollars: Math.round(d.cents / 100),

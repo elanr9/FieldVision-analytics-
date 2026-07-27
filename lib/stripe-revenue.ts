@@ -13,6 +13,8 @@ export interface RevenueSnapshot {
   mrrCents: number;
   activeSubscriptionCount: number;
   events: RevenueEvent[];
+  /** Set when the Stripe API call failed. UI shows this instead of numbers. */
+  error?: string;
 }
 
 const FIELDVISION_TYPE = 'fieldvision_subscription';
@@ -20,7 +22,7 @@ const FIELDVISION_TYPE = 'fieldvision_subscription';
 function stripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) return null;
-  return new Stripe(key, { apiVersion: '2025-08-27.basil' });
+  return new Stripe(key);
 }
 
 function subscriptionFromInvoice(
@@ -115,14 +117,27 @@ export async function loadRevenueSnapshot(
     return { configured: false, mrrCents: 0, activeSubscriptionCount: 0, events: [] };
   }
 
-  const [invoices, searchResult] = await Promise.all([
-    listAllPaidInvoices(stripe),
-    stripe.subscriptions.search({
-      query: `metadata['type']:'${FIELDVISION_TYPE}' AND status:'active'`,
-      limit: 100,
-      expand: ['data.items.data.price'],
-    }),
-  ]);
+  let invoices: Stripe.Invoice[];
+  let searchResult: Stripe.ApiSearchResult<Stripe.Subscription>;
+  try {
+    [invoices, searchResult] = await Promise.all([
+      listAllPaidInvoices(stripe),
+      stripe.subscriptions.search({
+        query: `metadata['type']:'${FIELDVISION_TYPE}' AND status:'active'`,
+        limit: 100,
+        expand: ['data.items.data.price'],
+      }),
+    ]);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      configured: true,
+      mrrCents: 0,
+      activeSubscriptionCount: 0,
+      events: [],
+      error: message,
+    };
+  }
 
   const events: RevenueEvent[] = [];
 
