@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { daysAgo, mailtoHref } from '@/lib/contact';
 import { formatDay } from '@/lib/dates';
 import { PIPELINE_META, type UserRecord } from '@/lib/types';
@@ -25,6 +25,33 @@ export default function UserDetail({
   user: UserRecord;
   onClose: () => void;
 }) {
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSummary(null);
+    setSummaryLoading(true);
+    fetch('/api/summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: { summary?: string } | null) => {
+        if (!cancelled) setSummary(data?.summary ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -90,6 +117,22 @@ export default function UserDetail({
             <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] font-semibold text-white">
               Internal
             </span>
+          )}
+        </div>
+
+        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+            The rundown
+          </p>
+          {summaryLoading ? (
+            <div className="mt-1.5 space-y-1.5">
+              <div className="h-3 w-full animate-pulse rounded bg-emerald-100" />
+              <div className="h-3 w-3/4 animate-pulse rounded bg-emerald-100" />
+            </div>
+          ) : (
+            <p className="mt-1 text-sm leading-relaxed text-neutral-800">
+              {summary ?? 'Could not load a summary for this user.'}
+            </p>
           )}
         </div>
 
