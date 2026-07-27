@@ -19,14 +19,23 @@ export interface RevenueSnapshot {
 
 const FIELDVISION_TYPE = 'fieldvision_subscription';
 
-/** Returns a human-readable problem with the configured key, or null if it looks fine. */
-function keyProblem(): string | null {
+/**
+ * Strips every character that cannot appear in a real Stripe key. Pasting
+ * from some sources adds invisible characters (zero width spaces, line
+ * breaks) that corrupt the Authorization header and surface as a generic
+ * "connection to Stripe" error.
+ */
+function cleanKey(): string | null {
   const raw = process.env.STRIPE_SECRET_KEY;
   if (!raw) return null;
-  const key = raw.trim();
-  if (/\s/.test(key)) {
-    return 'STRIPE_SECRET_KEY contains a space or line break in the middle. Delete the variable in Vercel, paste the key as one unbroken line, and redeploy.';
-  }
+  const key = raw.replace(/[^\x21-\x7e]/g, '');
+  return key.length > 0 ? key : null;
+}
+
+/** Returns a human-readable problem with the configured key, or null if it looks fine. */
+function keyProblem(): string | null {
+  const key = cleanKey();
+  if (!key) return null;
   if (key.startsWith('pk_')) {
     return 'STRIPE_SECRET_KEY is set to the publishable key (pk_...). It needs the secret key, which starts with sk_live_. Find it in Stripe Dashboard under Developers, API keys.';
   }
@@ -37,9 +46,13 @@ function keyProblem(): string | null {
 }
 
 function stripeClient(): Stripe | null {
-  const key = process.env.STRIPE_SECRET_KEY?.trim();
+  const key = cleanKey();
   if (!key) return null;
-  return new Stripe(key, { timeout: 20000, maxNetworkRetries: 2 });
+  return new Stripe(key, {
+    timeout: 20000,
+    maxNetworkRetries: 2,
+    httpClient: Stripe.createFetchHttpClient(),
+  });
 }
 
 function subscriptionFromInvoice(
@@ -158,7 +171,7 @@ export async function loadRevenueSnapshot(
     ]);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    const key = process.env.STRIPE_SECRET_KEY?.trim() ?? '';
+    const key = cleanKey() ?? '';
     const keyInfo = ` (key starts with ${key.slice(0, 8)}..., ${key.length} characters)`;
     return {
       configured: true,
