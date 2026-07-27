@@ -1,4 +1,10 @@
-import type { PlanInterval, ProfileRow, SubscriptionRow, UserStatus } from './types';
+import type {
+  PipelineStage,
+  PlanInterval,
+  ProfileRow,
+  SubscriptionRow,
+  UserStatus,
+} from './types';
 
 /** Trial length used by the live app (useSubscription.ts), 7 days */
 export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -79,4 +85,34 @@ export function classifyUser(
     return { status: 'trial_ended', interval, excludedFromMetrics: false };
   }
   return { status: 'signed_up', interval, excludedFromMetrics: false };
+}
+
+/**
+ * Sales pipeline stage for real, non-parent users who are not paying yet.
+ * Ordered by how actionable the outreach is.
+ */
+export function pipelineStage(
+  status: UserStatus,
+  onboarding: 'none' | 'in_progress' | 'completed',
+  trialEndsAt: string | null,
+  isParent: boolean,
+  excludedFromMetrics: boolean,
+  now: Date = new Date(),
+): PipelineStage | null {
+  if (excludedFromMetrics || isParent) return null;
+  if (status === 'paying' || status === 'comped') return null;
+
+  if (status === 'trialing' && trialEndsAt) {
+    const hoursLeft = (new Date(trialEndsAt).getTime() - now.getTime()) / 3600000;
+    if (hoursLeft <= 48) return 'trial_ending_soon';
+    return null;
+  }
+  if (status === 'trial_ended') return 'trial_lost';
+  if (status === 'churned') return 'churned';
+  if (status === 'signed_up') {
+    if (onboarding === 'completed') return 'stopped_at_paywall';
+    if (onboarding === 'in_progress') return 'in_onboarding';
+    return 'never_onboarded';
+  }
+  return null;
 }

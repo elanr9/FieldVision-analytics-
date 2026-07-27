@@ -2,21 +2,31 @@
 
 import { useMemo, useState } from 'react';
 import { addDays, startOfDay } from '@/lib/dates';
+import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
-import type { RevenueSnapshot } from '@/lib/stripe-revenue';
 import CalendarView from './CalendarView';
 import Funnel from './Funnel';
+import Pipeline from './Pipeline';
 import RevenueSection from './RevenueSection';
 import TrendChart from './TrendChart';
+import UserDetail from './UserDetail';
 import UserTable from './UserTable';
 
 type RangeKey = '7d' | '30d' | 'all' | 'custom';
+type Tab = 'overview' | 'pipeline' | 'users' | 'calendar';
 
 const RANGE_LABEL: Record<RangeKey, string> = {
   '7d': 'Last 7 days',
   '30d': 'Last 30 days',
   all: 'All time',
   custom: 'Custom',
+};
+
+const TAB_LABEL: Record<Tab, string> = {
+  overview: 'Overview',
+  pipeline: 'Follow ups',
+  users: 'Users',
+  calendar: 'Calendar',
 };
 
 export default function Dashboard({
@@ -26,9 +36,11 @@ export default function Dashboard({
   users: UserRecord[];
   revenue: RevenueSnapshot;
 }) {
+  const [tab, setTab] = useState<Tab>('overview');
   const [range, setRange] = useState<RangeKey>('30d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [selected, setSelected] = useState<UserRecord | null>(null);
 
   /** Real users only. Demo, ambassador, and admin accounts never enter metrics. */
   const realUsers = useMemo(() => users.filter(u => !u.excludedFromMetrics), [users]);
@@ -61,92 +73,129 @@ export default function Dashboard({
 
   const payingNow = realUsers.filter(u => u.status === 'paying').length;
   const trialingNow = realUsers.filter(u => u.status === 'trialing').length;
-  const compedCount = users.filter(u => u.status === 'comped').length;
+  const followUps = realUsers.filter(u => u.pipeline !== null).length;
+
+  const headerStats: { label: string; value: string; accent?: boolean }[] = [
+    { label: 'Paying', value: String(payingNow), accent: true },
+    ...(revenue.configured ? [{ label: 'MRR', value: formatUsd(revenue.mrrCents) }] : []),
+    { label: 'Trialing', value: String(trialingNow) },
+    { label: 'Follow ups', value: String(followUps) },
+  ];
+
+  const showRangePicker = tab === 'overview';
 
   return (
     <main className="mx-auto max-w-3xl px-4 pb-16">
-      <header className="sticky top-0 z-10 -mx-4 mb-5 border-b border-neutral-200 bg-neutral-50/95 px-4 py-4 backdrop-blur">
-        <h1 className="text-xl font-bold">FieldVision Analytics</h1>
-        <p className="text-xs text-neutral-500">
-          {payingNow} paying · {trialingNow} trialing · {compedCount} comped (excluded from
-          revenue)
-        </p>
+      <header className="sticky top-0 z-20 -mx-4 border-b border-neutral-200 bg-neutral-50/95 px-4 pt-4 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">FieldVision</h1>
+          <div className="flex items-center gap-3">
+            {headerStats.map(s => (
+              <div key={s.label} className="text-right">
+                <p
+                  className={`text-sm font-bold tabular-nums leading-tight ${
+                    s.accent ? 'text-emerald-600' : ''
+                  }`}
+                >
+                  {s.value}
+                </p>
+                <p className="text-[10px] uppercase tracking-wide text-neutral-400">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <nav className="mt-3 flex gap-1 overflow-x-auto pb-2">
+          {(Object.keys(TAB_LABEL) as Tab[]).map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                tab === t
+                  ? 'bg-neutral-900 text-white'
+                  : 'text-neutral-500 hover:bg-neutral-200/60'
+              }`}
+            >
+              {TAB_LABEL[t]}
+              {t === 'pipeline' && followUps > 0 && (
+                <span className="ml-1.5 rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">
+                  {followUps}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <div className="mb-3 flex rounded-xl bg-neutral-200/60 p-1">
-        {(['7d', '30d', 'all', 'custom'] as RangeKey[]).map(k => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setRange(k)}
-            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-colors ${
-              range === k ? 'bg-white shadow-sm' : 'text-neutral-500'
-            }`}
-          >
-            {RANGE_LABEL[k]}
-          </button>
-        ))}
+      <div className="pt-4">
+        {showRangePicker && (
+          <>
+            <div className="mb-3 flex rounded-xl bg-neutral-200/60 p-1">
+              {(['7d', '30d', 'all', 'custom'] as RangeKey[]).map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setRange(k)}
+                  className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-colors ${
+                    range === k ? 'bg-white shadow-sm' : 'text-neutral-500'
+                  }`}
+                >
+                  {RANGE_LABEL[k]}
+                </button>
+              ))}
+            </div>
+            {range === 'custom' && (
+              <div className="mb-3 flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+                />
+                <span className="text-sm text-neutral-400">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === 'overview' && (
+          <div className="space-y-8">
+            <section>
+              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Revenue · {RANGE_LABEL[range]}
+              </h2>
+              <RevenueSection revenue={revenue} from={from} to={to} rangeLabel={RANGE_LABEL[range]} />
+            </section>
+            <section>
+              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Funnel · {RANGE_LABEL[range]}
+              </h2>
+              <Funnel cohort={cohort} />
+            </section>
+            <section>
+              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+                Trend
+              </h2>
+              <TrendChart users={realUsers} from={from} to={to} />
+            </section>
+          </div>
+        )}
+
+        {tab === 'pipeline' && <Pipeline users={realUsers} onSelect={setSelected} />}
+
+        {tab === 'users' && <UserTable users={users} onSelect={setSelected} />}
+
+        {tab === 'calendar' && <CalendarView users={realUsers} onSelect={setSelected} />}
       </div>
 
-      {range === 'custom' && (
-        <div className="mb-3 flex items-center gap-2">
-          <input
-            type="date"
-            value={customFrom}
-            onChange={e => setCustomFrom(e.target.value)}
-            className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
-          />
-          <span className="text-sm text-neutral-400">to</span>
-          <input
-            type="date"
-            value={customTo}
-            onChange={e => setCustomTo(e.target.value)}
-            className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
-          />
-        </div>
-      )}
-
-      <div className="space-y-8">
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-            Revenue · {RANGE_LABEL[range]}
-          </h2>
-          <RevenueSection
-            revenue={revenue}
-            from={from}
-            to={to}
-            rangeLabel={RANGE_LABEL[range]}
-          />
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-            Funnel · {RANGE_LABEL[range]}
-          </h2>
-          <Funnel cohort={cohort} />
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-            Trend
-          </h2>
-          <TrendChart users={realUsers} from={from} to={to} />
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-            Signup calendar
-          </h2>
-          <CalendarView users={realUsers} />
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-            All users
-          </h2>
-          <UserTable users={users} />
-        </section>
-      </div>
+      {selected && <UserDetail user={selected} onClose={() => setSelected(null)} />}
     </main>
   );
 }

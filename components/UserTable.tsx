@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { formatDay } from '@/lib/dates';
 import { STATUS_LABEL, type UserRecord, type UserStatus } from '@/lib/types';
+import ContactActions from './ContactActions';
 import StatusBadge from './StatusBadge';
 
 const FILTERS: (UserStatus | 'all')[] = [
@@ -15,8 +16,14 @@ const FILTERS: (UserStatus | 'all')[] = [
   'comped',
 ];
 
-/** Full user list, searchable and filterable. Includes internal accounts, clearly marked. */
-export default function UserTable({ users }: { users: UserRecord[] }) {
+/** Full user list, searchable and filterable. Tap a row for details. */
+export default function UserTable({
+  users,
+  onSelect,
+}: {
+  users: UserRecord[];
+  onSelect: (u: UserRecord) => void;
+}) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<UserStatus | 'all'>('all');
 
@@ -25,19 +32,24 @@ export default function UserTable({ users }: { users: UserRecord[] }) {
     return users.filter(u => {
       if (filter !== 'all' && u.status !== filter) return false;
       if (!q) return true;
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+      return (
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.team ?? '').toLowerCase().includes(q) ||
+        (u.phone ?? '').includes(q)
+      );
     });
   }, [users, search, filter]);
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white">
-      <div className="flex flex-col gap-2 border-b border-neutral-200 p-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 border-b border-neutral-200 p-3">
         <input
           type="search"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search name or email"
-          className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 sm:max-w-xs"
+          placeholder="Search name, email, team, or phone"
+          className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
         />
         <div className="flex flex-wrap gap-1">
           {FILTERS.map(f => (
@@ -61,23 +73,38 @@ export default function UserTable({ users }: { users: UserRecord[] }) {
 
       <ul className="divide-y divide-neutral-100">
         {filtered.map(u => (
-          <li key={u.id} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">
-                {u.name}
-                {u.isParent && <span className="ml-1.5 text-[10px] font-semibold text-neutral-400">PARENT</span>}
-                {u.excludedFromMetrics && (
-                  <span className="ml-1.5 rounded bg-neutral-800 px-1 py-px text-[9px] font-bold text-white">
-                    INTERNAL
-                  </span>
-                )}
-              </p>
-              <p className="truncate text-xs text-neutral-500">{u.email}</p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <StatusBadge status={u.status} interval={u.interval} />
-              <span className="text-[10px] text-neutral-400">Joined {formatDay(u.signupDate)}</span>
-            </div>
+          <li key={u.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(u)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {u.name}
+                  {u.team && <span className="ml-1.5 text-xs font-normal text-neutral-400">{u.team}</span>}
+                  {u.isParent && (
+                    <span className="ml-1.5 text-[10px] font-semibold text-neutral-400">PARENT</span>
+                  )}
+                  {u.excludedFromMetrics && (
+                    <span className="ml-1.5 rounded bg-neutral-800 px-1 py-px text-[9px] font-bold text-white">
+                      INTERNAL
+                    </span>
+                  )}
+                </p>
+                <p className="truncate text-xs text-neutral-500">
+                  {u.email}
+                  {u.phone ? ` · ${u.phone}` : ''}
+                </p>
+              </div>
+              <div className="hidden shrink-0 sm:block">
+                <ContactActions user={u} />
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <StatusBadge status={u.status} interval={u.interval} />
+                <span className="text-[10px] text-neutral-400">Joined {formatDay(u.signupDate)}</span>
+              </div>
+            </button>
           </li>
         ))}
         {filtered.length === 0 && (

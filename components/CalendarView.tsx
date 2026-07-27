@@ -8,7 +8,13 @@ import StatusBadge from './StatusBadge';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Month calendar of real signups. Clicking a day lists who signed up. */
-export default function CalendarView({ users }: { users: UserRecord[] }) {
+export default function CalendarView({
+  users,
+  onSelect,
+}: {
+  users: UserRecord[];
+  onSelect: (u: UserRecord) => void;
+}) {
   const [monthStart, setMonthStart] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -127,12 +133,18 @@ export default function CalendarView({ users }: { users: UserRecord[] }) {
           ) : (
             <ul className="divide-y divide-neutral-100">
               {selectedUsers.map(u => (
-                <li key={u.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{u.name}</p>
-                    <p className="truncate text-xs text-neutral-500">{u.email}</p>
-                  </div>
-                  <StatusBadge status={u.status} interval={u.interval} />
+                <li key={u.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(u)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{u.name}</p>
+                      <p className="truncate text-xs text-neutral-500">{u.email}</p>
+                    </div>
+                    <StatusBadge status={u.status} interval={u.interval} />
+                  </button>
                 </li>
               ))}
             </ul>
