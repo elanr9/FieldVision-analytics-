@@ -19,10 +19,27 @@ export interface RevenueSnapshot {
 
 const FIELDVISION_TYPE = 'fieldvision_subscription';
 
+/** Returns a human-readable problem with the configured key, or null if it looks fine. */
+function keyProblem(): string | null {
+  const raw = process.env.STRIPE_SECRET_KEY;
+  if (!raw) return null;
+  const key = raw.trim();
+  if (/\s/.test(key)) {
+    return 'STRIPE_SECRET_KEY contains a space or line break in the middle. Delete the variable in Vercel, paste the key as one unbroken line, and redeploy.';
+  }
+  if (key.startsWith('pk_')) {
+    return 'STRIPE_SECRET_KEY is set to the publishable key (pk_...). It needs the secret key, which starts with sk_live_. Find it in Stripe Dashboard under Developers, API keys.';
+  }
+  if (!key.startsWith('sk_') && !key.startsWith('rk_')) {
+    return `STRIPE_SECRET_KEY does not look like a Stripe key (it starts with "${key.slice(0, 6)}" and is ${key.length} characters). Paste the sk_live_ secret key from Stripe Dashboard.`;
+  }
+  return null;
+}
+
 function stripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) return null;
-  return new Stripe(key);
+  return new Stripe(key, { timeout: 20000, maxNetworkRetries: 2 });
 }
 
 function subscriptionFromInvoice(
@@ -117,6 +134,17 @@ export async function loadRevenueSnapshot(
     return { configured: false, mrrCents: 0, activeSubscriptionCount: 0, events: [] };
   }
 
+  const problem = keyProblem();
+  if (problem) {
+    return {
+      configured: true,
+      mrrCents: 0,
+      activeSubscriptionCount: 0,
+      events: [],
+      error: problem,
+    };
+  }
+
   let invoices: Stripe.Invoice[];
   let searchResult: Stripe.ApiSearchResult<Stripe.Subscription>;
   try {
@@ -130,12 +158,14 @@ export async function loadRevenueSnapshot(
     ]);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    const key = process.env.STRIPE_SECRET_KEY?.trim() ?? '';
+    const keyInfo = ` (key starts with ${key.slice(0, 8)}..., ${key.length} characters)`;
     return {
       configured: true,
       mrrCents: 0,
       activeSubscriptionCount: 0,
       events: [],
-      error: message,
+      error: message + keyInfo,
     };
   }
 
