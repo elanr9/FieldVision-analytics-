@@ -49,53 +49,37 @@ function stripeClient(): Stripe | null {
   const key = cleanKey();
   if (!key) return null;
   return new Stripe(key, {
+    // Pinned so response shapes match the SDK types regardless of the
+    // account's default API version.
+    apiVersion: '2025-08-27.basil',
     timeout: 20000,
     maxNetworkRetries: 2,
     httpClient: Stripe.createFetchHttpClient(),
   });
 }
 
-function subscriptionFromInvoice(
-  invoice: Stripe.Invoice,
-): string | Stripe.Subscription | null {
-  return invoice.parent?.subscription_details?.subscription ?? null;
-}
-
+/**
+ * Subscription metadata is snapshotted onto every invoice at finalization
+ * (parent.subscription_details.metadata), so no expand call is needed.
+ * The main app sets user_id, plan_type, and type on every subscription.
+ */
 function invoiceMeta(invoice: Stripe.Invoice): Stripe.Metadata | null {
-  return (
-    invoice.parent?.subscription_details?.metadata ??
-    invoice.metadata ??
-    null
-  );
-}
-
-function userIdFromInvoice(invoice: Stripe.Invoice): string | null {
-  const sub = subscriptionFromInvoice(invoice);
-  if (sub && typeof sub !== 'string' && sub.metadata?.user_id) {
-    return sub.metadata.user_id;
-  }
-  const meta = invoiceMeta(invoice);
-  if (meta?.user_id) return meta.user_id;
+  const snapshot = invoice.parent?.subscription_details?.metadata;
+  if (snapshot && Object.keys(snapshot).length > 0) return snapshot;
+  if (invoice.metadata && Object.keys(invoice.metadata).length > 0) return invoice.metadata;
   return null;
 }
 
+function userIdFromInvoice(invoice: Stripe.Invoice): string | null {
+  return invoiceMeta(invoice)?.user_id ?? null;
+}
+
 function planTypeFromInvoice(invoice: Stripe.Invoice): string | null {
-  const sub = subscriptionFromInvoice(invoice);
-  if (sub && typeof sub !== 'string' && sub.metadata?.plan_type) {
-    return sub.metadata.plan_type;
-  }
-  const meta = invoiceMeta(invoice);
-  return meta?.plan_type ?? null;
+  return invoiceMeta(invoice)?.plan_type ?? null;
 }
 
 function isFieldVisionSubscriptionInvoice(invoice: Stripe.Invoice): boolean {
-  const sub = subscriptionFromInvoice(invoice);
-  if (sub && typeof sub !== 'string') {
-    if (sub.metadata?.type === FIELDVISION_TYPE) return true;
-  }
-  const meta = invoiceMeta(invoice);
-  if (meta?.type === FIELDVISION_TYPE) return true;
-  if (invoice.metadata?.type === FIELDVISION_TYPE) return true;
+  if (invoiceMeta(invoice)?.type === FIELDVISION_TYPE) return true;
   const desc = invoice.lines?.data?.[0]?.description?.toLowerCase() ?? '';
   if (desc.includes('fieldvision') || desc.includes('field vision')) return true;
   return false;
@@ -109,7 +93,6 @@ async function listAllPaidInvoices(stripe: Stripe): Promise<Stripe.Invoice[]> {
     const batch = await stripe.invoices.list({
       status: 'paid',
       limit: 100,
-      expand: ['data.parent.subscription_details.subscription'],
       starting_after: startingAfter,
     });
     all.push(...batch.data);
@@ -166,7 +149,6 @@ export async function loadRevenueSnapshot(
       stripe.subscriptions.search({
         query: `metadata['type']:'${FIELDVISION_TYPE}' AND status:'active'`,
         limit: 100,
-        expand: ['data.items.data.price'],
       }),
     ]);
   } catch (e) {
