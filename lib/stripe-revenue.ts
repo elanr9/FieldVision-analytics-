@@ -58,40 +58,28 @@ function stripeClient(): Stripe | null {
   });
 }
 
-/**
- * Subscription metadata is snapshotted onto every invoice at finalization
- * (parent.subscription_details.metadata), so no expand call is needed.
- * The main app sets user_id, plan_type, and type on every subscription.
- */
-function invoiceMeta(invoice: Stripe.Invoice): Stripe.Metadata | null {
-  const snapshot = invoice.parent?.subscription_details?.metadata;
-  if (snapshot && Object.keys(snapshot).length > 0) return snapshot;
-  if (invoice.metadata && Object.keys(invoice.metadata).length > 0) return invoice.metadata;
-  return null;
+/** Lifetime is sold as a one-time charge but left on a monthly price in Stripe. */
+function isLifetimePlan(planType: string | null | undefined): boolean {
+  if (!planType) return false;
+  return (
+    planType.startsWith('lifetime') ||
+    planType === 'monthly_499' ||
+    planType === 'one_time'
+  );
 }
 
-function userIdFromInvoice(invoice: Stripe.Invoice): string | null {
-  return invoiceMeta(invoice)?.user_id ?? null;
+function hasActiveDiscount(sub: Stripe.Subscription): boolean {
+  return (sub.discounts?.length ?? 0) > 0;
 }
 
-function planTypeFromInvoice(invoice: Stripe.Invoice): string | null {
-  return invoiceMeta(invoice)?.plan_type ?? null;
-}
-
-function isFieldVisionSubscriptionInvoice(invoice: Stripe.Invoice): boolean {
-  if (invoiceMeta(invoice)?.type === FIELDVISION_TYPE) return true;
-  const desc = invoice.lines?.data?.[0]?.description?.toLowerCase() ?? '';
-  if (desc.includes('fieldvision') || desc.includes('field vision')) return true;
-  return false;
-}
-
-async function listAllPaidInvoices(stripe: Stripe): Promise<Stripe.Invoice[]> {
-  const all: Stripe.Invoice[] = [];
+async function listAllSucceededPaymentIntents(
+  stripe: Stripe,
+): Promise<Stripe.PaymentIntent[]> {
+  const all: Stripe.PaymentIntent[] = [];
   let startingAfter: string | undefined;
 
   for (let page = 0; page < 50; page++) {
-    const batch = await stripe.invoices.list({
-      status: 'paid',
+    const batch = await stripe.paymentIntents.list({
       limit: 100,
       starting_after: startingAfter,
     });
@@ -119,8 +107,9 @@ function mrrFromSubscription(sub: Stripe.Subscription): number {
 }
 
 /**
- * Loads Stripe revenue for FieldVision Pro only. Excludes $0 invoices and
- * any payment tied to demo, ambassador, or admin user IDs.
+ * Loads Stripe revenue for FieldVision Pro. Cash collected comes from
+ * succeeded PaymentIntents (matches Stripe gross). MRR ignores lifetime
+ * plans and actively discounted subscriptions so it matches Stripe MRR.
  */
 export async function loadRevenueSnapshot(
   excludedUserIds: Set<string>,
@@ -141,11 +130,11 @@ export async function loadRevenueSnapshot(
     };
   }
 
-  let invoices: Stripe.Invoice[];
+  let paymentIntents: Stripe.PaymentIntent[];
   let searchResult: Stripe.ApiSearchResult<Stripe.Subscription>;
   try {
-    [invoices, searchResult] = await Promise.all([
-      listAllPaidInvoices(stripe),
+    [paymentIntents, searchResult] = await Promise.all([
+      listAllSucceededPaymentIntents(stripe),
       stripe.subscriptions.search({
         query: `metadata['type']:'${FIELDVISION_TYPE}' AND status:'active'`,
         limit: 100,
@@ -166,21 +155,18 @@ export async function loadRevenueSnapshot(
 
   const events: RevenueEvent[] = [];
 
-  for (const invoice of invoices) {
-    if ((invoice.amount_paid ?? 0) <= 0) continue;
-    if (!isFieldVisionSubscriptionInvoice(invoice)) continue;
+  for (const pi of paymentIntents) {
+    if (pi.status !== 'succeeded') continue;
+    const cents = pi.amount_received ?? 0;
+    if (cents <= 0) continue;
 
-    const userId = userIdFromInvoice(invoice);
+    const userId = pi.metadata?.user_id ?? null;
     if (userId && excludedUserIds.has(userId)) continue;
 
-    const paidAt = invoice.status_transitions?.paid_at
-      ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
-      : new Date(invoice.created * 1000).toISOString();
-
     events.push({
-      paidAt,
-      cents: invoice.amount_paid ?? 0,
-      planType: planTypeFromInvoice(invoice),
+      paidAt: new Date(pi.created * 1000).toISOString(),
+      cents,
+      planType: pi.metadata?.plan_type ?? null,
       userId,
     });
   }
@@ -193,6 +179,8 @@ export async function loadRevenueSnapshot(
   for (const sub of searchResult.data) {
     const userId = sub.metadata?.user_id;
     if (userId && excludedUserIds.has(userId)) continue;
+    if (isLifetimePlan(sub.metadata?.plan_type)) continue;
+    if (hasActiveDiscount(sub)) continue;
     activeSubscriptionCount++;
     mrrCents += mrrFromSubscription(sub);
   }

@@ -70,7 +70,9 @@ export default function RevenueSection({
           <p className="mt-1 truncate text-xl font-bold tabular-nums text-emerald-600 sm:text-3xl">
             {formatUsd(totalCents)}
           </p>
-          <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">Paid invoices, $0 excluded</p>
+          <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
+            Succeeded payments, $0 excluded
+          </p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
           <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
@@ -91,7 +93,7 @@ export default function RevenueSection({
             {formatUsd(revenue.events.reduce((s, e) => s + e.cents, 0))}
           </p>
           <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
-            {revenue.events.length} paid invoices
+            {revenue.events.length} succeeded payments
           </p>
         </div>
       </div>
