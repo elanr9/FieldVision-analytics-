@@ -9,8 +9,28 @@ export function normalizePhone(raw: string | null): string | null {
   return `+${bare}`;
 }
 
-export function smsHref(phone: string): string {
-  return `sms:${phone}`;
+/** First name for outreach copy. Falls back to "there" if name is empty. */
+export function firstName(fullName: string | null | undefined): string {
+  const part = fullName?.trim().split(/\s+/)[0];
+  return part || 'there';
+}
+
+/** Prefills iMessage/SMS with the outreach template for this user. */
+export function outreachSmsBody(name: string, onTrial: boolean): string {
+  const first = firstName(name);
+  if (onTrial) {
+    return `Hey ${first}, I'm Elan, the CEO of FieldVision! Saw you made an account and are on a free trial, wanted to check in and see how's everything going. If you have any questions about FieldVision or college recruitment in general feel free to call or text me whenever!`;
+  }
+  return `Hey ${first}, I'm Elan, the CEO of FieldVision AI. I saw you made an account and just wanted to reach out to see if you have any questions about FieldVision or college recruitment in general, whether you use FieldVision or not I'm always here for any questions so feel free to call or text anytime!`;
+}
+
+export function smsHref(phone: string, body?: string): string {
+  if (!body) return `sms:${phone}`;
+  // iOS uses &body=, Android uses ?body=
+  const isIos =
+    typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const sep = isIos ? '&' : '?';
+  return `sms:${phone}${sep}body=${encodeURIComponent(body)}`;
 }
 
 export function telHref(phone: string): string {

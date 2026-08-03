@@ -1,16 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { addDays, startOfDay } from '@/lib/dates';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
 import CalendarView from './CalendarView';
 import Funnel from './Funnel';
 import Pipeline from './Pipeline';
+import { OPEN_USER_EVENT } from './PushRegistration';
 import RevenueSection from './RevenueSection';
 import TrendChart from './TrendChart';
 import UserDetail from './UserDetail';
 import UserTable from './UserTable';
+
+const PENDING_USER_KEY = 'fv-open-user';
 
 type RangeKey = '7d' | '30d' | 'all' | 'custom';
 type Tab = 'overview' | 'pipeline' | 'users' | 'calendar';
@@ -44,6 +47,32 @@ export default function Dashboard({
 
   /** Real users only. Demo, ambassador, and admin accounts never enter metrics. */
   const realUsers = useMemo(() => users.filter(u => !u.excludedFromMetrics), [users]);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PENDING_USER_KEY);
+    if (!pending) return;
+    const match = users.find(u => u.id === pending);
+    if (match) {
+      sessionStorage.removeItem(PENDING_USER_KEY);
+      setSelected(match);
+    }
+  }, [users]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const userId = (event as CustomEvent<{ userId: string }>).detail?.userId;
+      if (!userId) return;
+      const match = users.find(u => u.id === userId);
+      if (match) {
+        setSelected(match);
+        return;
+      }
+      sessionStorage.setItem(PENDING_USER_KEY, userId);
+      window.location.reload();
+    };
+    window.addEventListener(OPEN_USER_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_USER_EVENT, onOpen);
+  }, [users]);
 
   const { from, to } = useMemo(() => {
     const now = new Date();

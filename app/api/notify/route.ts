@@ -58,16 +58,22 @@ export async function POST(request: NextRequest) {
 
   let title = 'FieldVision';
   let body = 'Something happened';
+  let userId = record.user_id ?? '';
+  let eventType = 'generic';
 
   if (table === 'user_profiles' && op === 'INSERT') {
     const name = record.full_name ?? 'Someone';
     const email = record.email ?? record.notification_email ?? '';
     title = 'New signup';
     body = email ? `${name} (${email}) just created an account` : `${name} just created an account`;
+    userId = record.user_id ?? '';
+    eventType = 'signup';
   } else if (table === 'user_profiles' && op === 'UPDATE') {
     const name = record.full_name ?? 'Someone';
     title = 'Trial started';
     body = `${name} just started their 7 day trial`;
+    userId = record.user_id ?? '';
+    eventType = 'trial';
   } else if (table === 'user_subscriptions') {
     const name = await lookupName(record.user_id);
     const plan = record.plan ?? 'unknown plan';
@@ -78,17 +84,23 @@ export async function POST(request: NextRequest) {
     if (paidChanged) {
       title = 'New payment';
       body = `${name} paid${dollars(record.amount_cents)} on the ${plan} plan`;
+      eventType = 'payment';
     } else if (op === 'INSERT') {
       title = 'New subscription';
       body = `${name} is now on the ${plan} plan`;
+      eventType = 'subscription';
     } else {
       title = 'Plan changed';
       body = `${name} moved from ${oldRecord?.plan ?? 'unknown'} to ${plan}`;
+      eventType = 'plan_change';
     }
   }
 
+  const data: Record<string, string> = { eventType };
+  if (userId) data.userId = userId;
+
   try {
-    await sendPushToAll(title, body);
+    await sendPushToAll(title, body, data);
   } catch (err) {
     console.error('Push send failed', err);
     return NextResponse.json({ error: 'Push send failed' }, { status: 500 });

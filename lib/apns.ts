@@ -87,23 +87,33 @@ function sendToHost(
   });
 }
 
+export type PushData = Record<string, string>;
+
 /**
  * Sends an alert push to every registered device.
  * Tries production APNs first and falls back to sandbox for tokens issued
  * by development builds. Tokens Apple reports as dead are deleted.
+ * Extra string fields in `data` are delivered to the client for deep links.
  */
-export async function sendPushToAll(title: string, body: string): Promise<void> {
+export async function sendPushToAll(
+  title: string,
+  body: string,
+  data: PushData = {},
+): Promise<void> {
   const supabase = adminClient();
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('analytics_push_tokens')
     .select('token');
   if (error) throw error;
 
-  const tokens = (data ?? []).map(row => row.token as string);
+  const tokens = (rows ?? []).map(row => row.token as string);
   if (tokens.length === 0) return;
 
   const jwt = apnsJwt();
-  const payload = JSON.stringify({ aps: { alert: { title, body }, sound: 'default' } });
+  const payload = JSON.stringify({
+    aps: { alert: { title, body }, sound: 'default' },
+    ...data,
+  });
   const deadTokens: string[] = [];
 
   for (const token of tokens) {
