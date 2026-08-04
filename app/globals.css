@@ -4,9 +4,21 @@
   color-scheme: light;
 }
 
+/* Matches bg-neutral-50 so iOS rubber band overscroll never flashes white */
+html {
+  background-color: #fafafa;
+}
+
 body {
   @apply bg-neutral-50 text-neutral-900 antialiased;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+button {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Hide horizontal scrollbars on mobile stat/tab strips */

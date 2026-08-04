@@ -49,7 +49,7 @@ export default function UserTable({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search name, email, team, or phone"
-          className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-base outline-none focus:border-emerald-500"
         />
         <div className="flex flex-wrap gap-1">
           {FILTERS.map(f => (

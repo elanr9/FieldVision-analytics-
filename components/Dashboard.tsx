@@ -114,8 +114,8 @@ export default function Dashboard({
   const showRangePicker = tab === 'overview';
 
   return (
-    <main className="mx-auto max-w-3xl px-4 pb-16">
-      <header className="sticky top-0 z-20 -mx-4 border-b border-neutral-200 bg-neutral-50/95 px-4 pt-4 backdrop-blur">
+    <main className="mx-auto max-w-3xl px-4 pb-[calc(env(safe-area-inset-bottom)+4rem)]">
+      <header className="sticky top-0 z-20 -mx-4 border-b border-neutral-200 bg-neutral-50 px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <div className="flex items-center justify-between gap-3">
           <h1 className="shrink-0 text-lg font-bold sm:text-xl">FieldVision</h1>
           <div className="no-scrollbar flex items-center gap-4 overflow-x-auto">
@@ -136,13 +136,13 @@ export default function Dashboard({
           </div>
         </div>
 
-        <nav className="no-scrollbar mt-2.5 flex gap-1 overflow-x-auto pb-2">
+        <nav className="mt-2.5 flex gap-1 pb-2">
           {(Object.keys(TAB_LABEL) as Tab[]).map(t => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`min-h-11 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors active:scale-95 ${
+              className={`relative min-h-11 flex-1 whitespace-nowrap rounded-full px-1 py-2 text-[13px] font-semibold transition-colors ${
                 tab === t
                   ? 'bg-neutral-900 text-white'
                   : 'text-neutral-500 hover:bg-neutral-200/60 active:bg-neutral-200'
@@ -150,7 +150,7 @@ export default function Dashboard({
             >
               {TAB_LABEL[t]}
               {t === 'pipeline' && followUps > 0 && (
-                <span className="ml-1.5 rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">
+                <span className="absolute -top-1 right-0 rounded-full bg-emerald-500 px-1.5 py-px text-[10px] font-bold text-white">
                   {followUps}
                 </span>
               )}
@@ -182,14 +182,14 @@ export default function Dashboard({
                   type="date"
                   value={customFrom}
                   onChange={e => setCustomFrom(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-base"
                 />
                 <span className="text-sm text-neutral-400">to</span>
                 <input
                   type="date"
                   value={customTo}
                   onChange={e => setCustomTo(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-base"
                 />
               </div>
             )}
