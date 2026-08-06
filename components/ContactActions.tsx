@@ -1,6 +1,12 @@
 'use client';
 
-import { mailtoHref, outreachSmsBody, smsHref, telHref } from '@/lib/contact';
+import {
+  mailtoHref,
+  outreachEmailBody,
+  outreachSmsBody,
+  smsHref,
+  telHref,
+} from '@/lib/contact';
 import type { UserRecord } from '@/lib/types';
 
 /** Text, call, and email buttons. Stops row click propagation so they work inside clickable cards. */
@@ -42,7 +48,10 @@ export default function ContactActions({
       )}
       {user.email && (
         <a
-          href={mailtoHref(user.email)}
+          href={mailtoHref(user.email, {
+            subject: 'Quick check-in from FieldVision',
+            body: outreachEmailBody(user.name, onTrial),
+          })}
           onClick={stop}
           className={`${base} bg-neutral-100 text-neutral-700 hover:bg-neutral-200`}
         >

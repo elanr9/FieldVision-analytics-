@@ -24,6 +24,15 @@ export function outreachSmsBody(name: string, onTrial: boolean): string {
   return `Hey ${first}, I'm Elan, the CEO of FieldVision AI. I saw you made an account and just wanted to reach out to see if you have any questions about FieldVision or college recruitment in general, whether you use FieldVision or not I'm always here for any questions so feel free to call or text anytime!`;
 }
 
+/** Prefills mailto with a clean outreach email for this user. */
+export function outreachEmailBody(name: string, onTrial: boolean): string {
+  const first = firstName(name);
+  const intro = onTrial
+    ? `Hey ${first},\n\nI'm Elan, CEO & Co-founder of FieldVision. I saw you made an account and are on a free trial — wanted to check in and see how everything is going. If you have any questions about FieldVision or college recruitment in general, feel free to reply anytime!`
+    : `Hey ${first},\n\nI'm Elan, CEO & Co-founder of FieldVision. I saw you made an account and just wanted to reach out in case you have any questions about FieldVision or college recruitment. Whether you use FieldVision or not, I'm always here — feel free to reply anytime!`;
+  return `${intro}\n\nBest,\nElan\nCEO & Co-founder, FieldVision`;
+}
+
 export function smsHref(phone: string, body?: string): string {
   if (!body) return `sms:${phone}`;
   // iOS uses &body=, Android uses ?body=
@@ -37,8 +46,14 @@ export function telHref(phone: string): string {
   return `tel:${phone}`;
 }
 
-export function mailtoHref(email: string): string {
-  return `mailto:${email}`;
+export function mailtoHref(
+  email: string,
+  opts?: { subject?: string; body?: string },
+): string {
+  const parts: string[] = [];
+  if (opts?.subject) parts.push(`subject=${encodeURIComponent(opts.subject)}`);
+  if (opts?.body) parts.push(`body=${encodeURIComponent(opts.body)}`);
+  return parts.length ? `mailto:${email}?${parts.join('&')}` : `mailto:${email}`;
 }
 
 export function daysAgo(iso: string): string {
