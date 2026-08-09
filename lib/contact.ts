@@ -24,14 +24,15 @@ export function outreachSmsBody(name: string, onTrial: boolean): string {
   return `Hey ${first}, I'm Elan, the CEO of FieldVision AI. I saw you made an account and just wanted to reach out to see if you have any questions about FieldVision or college recruitment in general, whether you use FieldVision or not I'm always here for any questions so feel free to call or text anytime!`;
 }
 
-/** Prefills mailto with a clean outreach email for this user. */
+/** Same outreach as SMS, formatted as a clean email with signature. */
 export function outreachEmailBody(name: string, onTrial: boolean): string {
   const first = firstName(name);
-  const intro = onTrial
-    ? `Hey ${first},\n\nI'm Elan, CEO & Co-founder of FieldVision. I saw you made an account and are on a free trial — wanted to check in and see how everything is going. If you have any questions about FieldVision or college recruitment in general, feel free to reply anytime!`
-    : `Hey ${first},\n\nI'm Elan, CEO & Co-founder of FieldVision. I saw you made an account and just wanted to reach out in case you have any questions about FieldVision or college recruitment. Whether you use FieldVision or not, I'm always here — feel free to reply anytime!`;
-  return `${intro}\n\nBest,\nElan\nCEO & Co-founder, FieldVision`;
+  const sms = outreachSmsBody(name, onTrial);
+  const body = sms.replace(`Hey ${first}, `, `Hey ${first},\n\n`);
+  return `${body}\n\nBest,\nElan\nCEO & Co-founder, FieldVision`;
 }
+
+export const OUTREACH_EMAIL_SUBJECT = 'Quick check-in from FieldVision';
 
 export function smsHref(phone: string, body?: string): string {
   if (!body) return `sms:${phone}`;

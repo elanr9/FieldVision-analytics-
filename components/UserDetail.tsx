@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { daysAgo, mailtoHref } from '@/lib/contact';
 import { formatDay } from '@/lib/dates';
+import type { UserDossier as Dossier } from '@/lib/user-dossier';
 import { PIPELINE_META, type UserRecord } from '@/lib/types';
 import ContactActions from './ContactActions';
 import StatusBadge from './StatusBadge';
+import UserDossier from './UserDossier';
 
 function Row({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
@@ -27,6 +29,8 @@ export default function UserDetail({
 }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [dossier, setDossier] = useState<Dossier | null>(null);
+  const [dossierLoading, setDossierLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +55,26 @@ export default function UserDetail({
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDossier(null);
+    setDossierLoading(true);
+    fetch(`/api/dossier?userId=${encodeURIComponent(user.id)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: Dossier | null) => {
+        if (!cancelled) setDossier(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDossier(null);
+      })
+      .finally(() => {
+        if (!cancelled) setDossierLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -191,6 +215,18 @@ export default function UserDetail({
             ))}
           </ol>
         </div>
+
+        {dossierLoading ? (
+          <div className="mt-5 space-y-2">
+            <div className="h-16 animate-pulse rounded-xl bg-neutral-100" />
+            <div className="h-28 animate-pulse rounded-xl bg-neutral-100" />
+            <div className="h-28 animate-pulse rounded-xl bg-neutral-100" />
+          </div>
+        ) : dossier ? (
+          <UserDossier dossier={dossier} />
+        ) : (
+          <p className="mt-5 text-sm text-neutral-400">Could not load full profile.</p>
+        )}
       </div>
     </div>
   );

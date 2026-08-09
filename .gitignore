@@ -8,3 +8,4 @@ next-env.d.ts
 ios/App/Pods
 ios/App/output
 ios/DerivedData
+.vercel
