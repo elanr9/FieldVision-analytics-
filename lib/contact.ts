@@ -16,8 +16,15 @@ export function firstName(fullName: string | null | undefined): string {
 }
 
 /** Prefills iMessage/SMS with the outreach template for this user. */
-export function outreachSmsBody(name: string, onTrial: boolean): string {
+export function outreachSmsBody(
+  name: string,
+  onTrial: boolean,
+  cancelled = false,
+): string {
   const first = firstName(name);
+  if (cancelled) {
+    return `Hey ${first}, I saw that you just cancelled your account, I wanted to ask what the reason was and also check in and see if I could have any advice for you on your college recruitment`;
+  }
   if (onTrial) {
     return `Hey ${first}, I'm Elan, the CEO of FieldVision! Saw you made an account and are on a free trial, wanted to check in and see how's everything going. If you have any questions about FieldVision or college recruitment in general feel free to call or text me whenever!`;
   }
@@ -25,9 +32,13 @@ export function outreachSmsBody(name: string, onTrial: boolean): string {
 }
 
 /** Same outreach as SMS, formatted as a clean email with signature. */
-export function outreachEmailBody(name: string, onTrial: boolean): string {
+export function outreachEmailBody(
+  name: string,
+  onTrial: boolean,
+  cancelled = false,
+): string {
   const first = firstName(name);
-  const sms = outreachSmsBody(name, onTrial);
+  const sms = outreachSmsBody(name, onTrial, cancelled);
   const body = sms.replace(`Hey ${first}, `, `Hey ${first},\n\n`);
   return `${body}\n\nBest,\nElan\nCEO & Co-founder, FieldVision`;
 }
@@ -47,14 +58,16 @@ export function telHref(phone: string): string {
   return `tel:${phone}`;
 }
 
-export function mailtoHref(
+/** Opens the Gmail app compose screen (iOS/Android). Avoids Safari mailto. */
+export function gmailComposeHref(
   email: string,
   opts?: { subject?: string; body?: string },
 ): string {
-  const parts: string[] = [];
-  if (opts?.subject) parts.push(`subject=${encodeURIComponent(opts.subject)}`);
-  if (opts?.body) parts.push(`body=${encodeURIComponent(opts.body)}`);
-  return parts.length ? `mailto:${email}?${parts.join('&')}` : `mailto:${email}`;
+  const params = new URLSearchParams();
+  params.set('to', email);
+  if (opts?.subject) params.set('subject', opts.subject);
+  if (opts?.body) params.set('body', opts.body);
+  return `googlegmail://co?${params.toString()}`;
 }
 
 export function daysAgo(iso: string): string {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { daysAgo, mailtoHref } from '@/lib/contact';
+import { daysAgo, gmailComposeHref } from '@/lib/contact';
 import { formatDay } from '@/lib/dates';
 import type { UserDossier as Dossier } from '@/lib/user-dossier';
 import { PIPELINE_META, type UserRecord } from '@/lib/types';
@@ -167,13 +167,35 @@ export default function UserDetail({
           </div>
         )}
 
+        {user.onboarding === 'in_progress' && user.onboardingStepLabel && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+              Stuck on this step
+            </p>
+            {user.onboardingChapterLabel && (
+              <p className="mt-1 text-xs font-medium text-amber-700/80">
+                {user.onboardingChapterLabel}
+              </p>
+            )}
+            <p className="mt-1 text-sm font-semibold leading-snug text-neutral-900">
+              {user.onboardingStepLabel}
+            </p>
+            <p className="mt-1.5 text-[11px] text-neutral-500">
+              Step {(user.onboardingStepIndex ?? 0) + 1}
+              {user.onboardingTotalSteps ? ` of ${user.onboardingTotalSteps}` : ''}
+              {user.onboardingStepId ? ` · ${user.onboardingStepId}` : ''}
+              {user.onboardingStepKind ? ` · ${user.onboardingStepKind}` : ''}
+            </p>
+          </div>
+        )}
+
         <div className="mt-4">
           <ContactActions user={user} size="lg" />
         </div>
 
         {user.parentEmail && (
           <a
-            href={mailtoHref(user.parentEmail)}
+            href={gmailComposeHref(user.parentEmail)}
             className="mt-2 block w-full rounded-xl bg-neutral-100 py-2.5 text-center text-sm font-semibold text-neutral-700 hover:bg-neutral-200"
           >
             Email parent{user.parentName ? ` (${user.parentName})` : ''}
@@ -190,7 +212,9 @@ export default function UserDetail({
               user.onboarding === 'completed'
                 ? 'Completed'
                 : user.onboarding === 'in_progress'
-                  ? `In progress (step ${(user.onboardingStepIndex ?? 0) + 1})`
+                  ? user.onboardingStepLabel
+                    ? `In progress · ${user.onboardingStepLabel}`
+                    : `In progress (step ${(user.onboardingStepIndex ?? 0) + 1})`
                   : 'Never started'
             }
           />

@@ -58,7 +58,9 @@ function cardNote(user: UserRecord, stage: PipelineStage): string {
     case 'churned':
       return user.paidAt ? `Last paid ${daysAgo(user.paidAt)}` : 'Canceled after paying';
     case 'in_onboarding':
-      return `Stuck at step ${(user.onboardingStepIndex ?? 0) + 1} · signed up ${daysAgo(user.signupDate)}`;
+      return user.onboardingStepLabel
+        ? `Stuck at "${user.onboardingStepLabel}" · signed up ${daysAgo(user.signupDate)}`
+        : `Stuck at step ${(user.onboardingStepIndex ?? 0) + 1} · signed up ${daysAgo(user.signupDate)}`;
     case 'never_onboarded':
       return `Signed up ${daysAgo(user.signupDate)}, no activity`;
   }

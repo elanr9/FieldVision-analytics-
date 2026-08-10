@@ -6,6 +6,7 @@ import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
 import CalendarView from './CalendarView';
 import Funnel from './Funnel';
+import OnboardingAnalytics from './OnboardingAnalytics';
 import Pipeline from './Pipeline';
 import { OPEN_USER_EVENT } from './PushRegistration';
 import RevenueSection from './RevenueSection';
@@ -16,7 +17,7 @@ import UserTable from './UserTable';
 const PENDING_USER_KEY = 'fv-open-user';
 
 type RangeKey = '7d' | '30d' | 'all' | 'custom';
-type Tab = 'overview' | 'pipeline' | 'users' | 'calendar';
+type Tab = 'overview' | 'onboarding' | 'pipeline' | 'users' | 'calendar';
 
 const RANGE_LABEL: Record<RangeKey, string> = {
   '7d': 'Last 7 days',
@@ -27,6 +28,7 @@ const RANGE_LABEL: Record<RangeKey, string> = {
 
 const TAB_LABEL: Record<Tab, string> = {
   overview: 'Overview',
+  onboarding: 'Onboarding',
   pipeline: 'Follow ups',
   users: 'Users',
   calendar: 'Calendar',
@@ -111,7 +113,7 @@ export default function Dashboard({
     { label: 'Follow ups', value: String(followUps) },
   ];
 
-  const showRangePicker = tab === 'overview';
+  const showRangePicker = tab === 'overview' || tab === 'onboarding';
 
   return (
     <main className="mx-auto max-w-3xl px-4 pb-[calc(env(safe-area-inset-bottom)+4rem)]">
@@ -217,6 +219,15 @@ export default function Dashboard({
               <TrendChart users={realUsers} from={from} to={to} />
             </section>
           </div>
+        )}
+
+        {tab === 'onboarding' && (
+          <OnboardingAnalytics
+            cohort={cohort}
+            rangeLabel={RANGE_LABEL[range]}
+            from={from}
+            to={to}
+          />
         )}
 
         {tab === 'pipeline' && <Pipeline users={realUsers} onSelect={setSelected} />}

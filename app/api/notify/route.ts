@@ -12,6 +12,7 @@ interface ProfileRecord {
 interface SubscriptionRecord {
   user_id?: string;
   plan?: string | null;
+  payment_type?: string | null;
   amount_cents?: number | null;
   paid_at?: string | null;
 }
@@ -56,10 +57,10 @@ export async function POST(request: NextRequest) {
   const payload = (await request.json()) as WebhookPayload;
   const { table, op, record, old_record: oldRecord } = payload;
 
-  let title = 'FieldVision';
-  let body = 'Something happened';
+  let title = '';
+  let body = '';
   let userId = record.user_id ?? '';
-  let eventType = 'generic';
+  let eventType = '';
 
   if (table === 'user_profiles' && op === 'INSERT') {
     const name = record.full_name ?? 'Someone';
@@ -75,11 +76,18 @@ export async function POST(request: NextRequest) {
     userId = record.user_id ?? '';
     eventType = 'trial';
   } else if (table === 'user_subscriptions') {
+    // Trial checkouts write plan=full + paid_at with amount_cents=0.
+    // Those are not payments — trial_started_at already covers the alert.
+    if ((record.amount_cents ?? 0) <= 0) {
+      return NextResponse.json({ ok: true, skipped: true, reason: 'no_charge' });
+    }
+
     const name = await lookupName(record.user_id);
     const plan = record.plan ?? 'unknown plan';
-    const paidChanged = op === 'INSERT'
-      ? Boolean(record.paid_at)
-      : record.paid_at !== oldRecord?.paid_at && Boolean(record.paid_at);
+    const paidChanged =
+      op === 'INSERT'
+        ? Boolean(record.paid_at)
+        : record.paid_at !== oldRecord?.paid_at && Boolean(record.paid_at);
 
     if (paidChanged) {
       title = 'New payment';
@@ -89,11 +97,15 @@ export async function POST(request: NextRequest) {
       title = 'New subscription';
       body = `${name} is now on the ${plan} plan`;
       eventType = 'subscription';
-    } else {
+    } else if (record.plan !== oldRecord?.plan) {
       title = 'Plan changed';
       body = `${name} moved from ${oldRecord?.plan ?? 'unknown'} to ${plan}`;
       eventType = 'plan_change';
+    } else {
+      return NextResponse.json({ ok: true, skipped: true, reason: 'no_meaningful_change' });
     }
+  } else {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'unhandled_event' });
   }
 
   const data: Record<string, string> = { eventType };

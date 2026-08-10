@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
+import { resolveFromIntake } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
 function adminClient() {
@@ -37,7 +38,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase
       .from('user_onboarding_intake')
       .select(
-        'user_id, completed, current_step_index, phone_number, club_team, position, grad_year, parent_first_name',
+        'user_id, completed, current_step_index, phone_number, club_team, position, grad_year, parent_first_name, education_level, has_emailed_coaches, league_level, pro_aspiration, parent_invite_choice',
       ),
     supabase.from('parent_invites').select('player_user_id, parent_email'),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
@@ -87,6 +88,21 @@ export async function loadUsers(): Promise<UserRecord[]> {
       ? new Date(new Date(profile.trial_started_at).getTime() + TRIAL_MS).toISOString()
       : null;
 
+    const resolved =
+      onboarding === 'in_progress' && intake
+        ? resolveFromIntake(
+            intake.current_step_index,
+            {
+              education_level: intake.education_level,
+              has_emailed_coaches: intake.has_emailed_coaches,
+              league_level: intake.league_level,
+              pro_aspiration: intake.pro_aspiration,
+              parent_invite_choice: intake.parent_invite_choice,
+            },
+            isParent,
+          )
+        : null;
+
     return {
       id: profile.user_id,
       name: profile.full_name ?? 'Unknown',
@@ -112,6 +128,12 @@ export async function loadUsers(): Promise<UserRecord[]> {
       excludedFromMetrics: c.excludedFromMetrics,
       onboarding,
       onboardingStepIndex: intake?.current_step_index ?? null,
+      onboardingStepId: resolved?.stepId ?? null,
+      onboardingStepLabel: resolved?.label ?? null,
+      onboardingChapter: resolved?.chapter ?? null,
+      onboardingChapterLabel: resolved?.chapterLabel ?? null,
+      onboardingStepKind: resolved?.kind ?? null,
+      onboardingTotalSteps: resolved?.totalSteps ?? null,
       pipeline: pipelineStage(
         c.status,
         onboarding,

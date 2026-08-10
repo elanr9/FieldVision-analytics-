@@ -55,6 +55,11 @@ export interface IntakeRow {
   position: string | null;
   grad_year: number | null;
   parent_first_name: string | null;
+  education_level: string | null;
+  has_emailed_coaches: string | null;
+  league_level: string | null;
+  pro_aspiration: string | null;
+  parent_invite_choice: string | null;
 }
 
 /** One fully classified user, safe to send to the client */
@@ -80,6 +85,12 @@ export interface UserRecord {
   excludedFromMetrics: boolean;
   onboarding: 'none' | 'in_progress' | 'completed';
   onboardingStepIndex: number | null;
+  onboardingStepId: string | null;
+  onboardingStepLabel: string | null;
+  onboardingChapter: string | null;
+  onboardingChapterLabel: string | null;
+  onboardingStepKind: string | null;
+  onboardingTotalSteps: number | null;
   /** Set for real, non-parent users who are not currently paying */
   pipeline: PipelineStage | null;
 }

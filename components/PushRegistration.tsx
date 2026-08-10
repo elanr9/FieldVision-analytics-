@@ -102,6 +102,10 @@ export default function PushRegistration() {
       handles.push(
         await push.addListener('pushNotificationReceived', notification => {
           showBanner(notification);
+          // Dashboard is SSR once — reload so new signups/trials appear in lists.
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 1200);
         }),
       );
       handles.push(

@@ -81,7 +81,11 @@ export function buildFactSheet(user: UserRecord, activity: UserActivity): string
       user.onboarding === 'completed'
         ? 'completed'
         : user.onboarding === 'in_progress'
-          ? `stopped at step ${(user.onboardingStepIndex ?? 0) + 1}, never finished`
+          ? `stopped at step ${(user.onboardingStepIndex ?? 0) + 1}${
+              user.onboardingStepId
+                ? ` (${user.onboardingStepId}: ${user.onboardingStepLabel ?? ''})`
+                : ''
+            }, never finished`
           : 'never started'
     }`,
   );
@@ -120,9 +124,10 @@ export function fallbackSummary(user: UserRecord, activity: UserActivity): strin
   if (user.onboarding === 'none') {
     parts.push(`${user.name.split(' ')[0]} signed up ${ago(user.signupDate)} and never even started onboarding`);
   } else if (user.onboarding === 'in_progress') {
-    parts.push(
-      `${user.name.split(' ')[0]} signed up ${ago(user.signupDate)} but stalled at onboarding step ${(user.onboardingStepIndex ?? 0) + 1}`,
-    );
+    const stepBit = user.onboardingStepLabel
+      ? `stalled at "${user.onboardingStepLabel}" (step ${(user.onboardingStepIndex ?? 0) + 1})`
+      : `stalled at onboarding step ${(user.onboardingStepIndex ?? 0) + 1}`;
+    parts.push(`${user.name.split(' ')[0]} signed up ${ago(user.signupDate)} but ${stepBit}`);
   } else if (!user.trialStartedAt) {
     parts.push(
       `${user.name.split(' ')[0]} finished onboarding but stopped cold at the paywall, no trial ever started`,
