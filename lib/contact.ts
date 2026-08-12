@@ -64,7 +64,7 @@ export function gmailComposeHref(
   opts?: { subject?: string; body?: string },
 ): string {
   // URLSearchParams encodes spaces as "+", which the Gmail app renders
-  // literally. encodeURIComponent uses "%20", which decodes correctly.
+  // literally. Use encodeURIComponent so spaces become %20.
   const parts = [`to=${encodeURIComponent(email)}`];
   if (opts?.subject) parts.push(`subject=${encodeURIComponent(opts.subject)}`);
   if (opts?.body) parts.push(`body=${encodeURIComponent(opts.body)}`);
