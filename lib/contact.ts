@@ -63,11 +63,12 @@ export function gmailComposeHref(
   email: string,
   opts?: { subject?: string; body?: string },
 ): string {
-  const params = new URLSearchParams();
-  params.set('to', email);
-  if (opts?.subject) params.set('subject', opts.subject);
-  if (opts?.body) params.set('body', opts.body);
-  return `googlegmail://co?${params.toString()}`;
+  // URLSearchParams encodes spaces as "+", which the Gmail app renders
+  // literally. encodeURIComponent uses "%20", which decodes correctly.
+  const parts = [`to=${encodeURIComponent(email)}`];
+  if (opts?.subject) parts.push(`subject=${encodeURIComponent(opts.subject)}`);
+  if (opts?.body) parts.push(`body=${encodeURIComponent(opts.body)}`);
+  return `googlegmail://co?${parts.join('&')}`;
 }
 
 export function daysAgo(iso: string): string {
