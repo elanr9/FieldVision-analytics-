@@ -6,6 +6,7 @@ import { formatDay } from '@/lib/dates';
 import type { UserDossier as Dossier } from '@/lib/user-dossier';
 import { PIPELINE_META, type UserRecord } from '@/lib/types';
 import ContactActions from './ContactActions';
+import EmailTemplates from './EmailTemplates';
 import StatusBadge from './StatusBadge';
 import UserDossier from './UserDossier';
 
@@ -19,14 +20,8 @@ function Row({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-/** Slide-over with everything about one user plus outreach actions. */
-export default function UserDetail({
-  user,
-  onClose,
-}: {
-  user: UserRecord;
-  onClose: () => void;
-}) {
+/** Full profile for one user plus outreach actions and template editing. */
+export default function UserDetail({ user }: { user: UserRecord }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [dossier, setDossier] = useState<Dossier | null>(null);
@@ -76,18 +71,6 @@ export default function UserDetail({
     };
   }, [user.id]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
   const pipelineMeta = user.pipeline ? PIPELINE_META[user.pipeline] : null;
 
   const journey: { label: string; date: string }[] = [
@@ -107,27 +90,11 @@ export default function UserDetail({
   journey.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[2px] sm:items-center"
-      onClick={onClose}
-    >
-      <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-bold">{user.name}</h2>
-            <p className="truncate text-sm text-neutral-500">{user.email || 'No email'}</p>
-            {user.phone && <p className="text-sm text-neutral-500">{user.phone}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-neutral-100 px-3 py-1.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-200"
-          >
-            Close
-          </button>
+    <div className="mt-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-2xl font-bold">{user.name}</h2>
+          <p className="truncate text-sm text-neutral-500">{user.email || 'No email'}</p>
+          {user.phone && <p className="text-sm text-neutral-500">{user.phone}</p>}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -162,15 +129,21 @@ export default function UserDetail({
 
         {pipelineMeta && (
           <div className="mt-3 rounded-xl bg-neutral-50 p-3">
-            <p className="text-sm font-semibold">{pipelineMeta.title}</p>
-            <p className="mt-0.5 text-xs text-neutral-500">{pipelineMeta.hint}</p>
+            <p className="text-sm font-semibold">
+              {user.onboardingActive ? 'In onboarding right now' : pipelineMeta.title}
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {user.onboardingActive
+                ? 'Active within the last hour. Give them time before reaching out.'
+                : pipelineMeta.hint}
+            </p>
           </div>
         )}
 
         {user.onboarding === 'in_progress' && user.onboardingStepLabel && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-              Stuck on this step
+              {user.onboardingActive ? 'Currently on this step' : 'Stuck on this step'}
             </p>
             {user.onboardingChapterLabel && (
               <p className="mt-1 text-xs font-medium text-amber-700/80">
@@ -240,6 +213,8 @@ export default function UserDetail({
           </ol>
         </div>
 
+        <EmailTemplates userId={user.id} />
+
         {dossierLoading ? (
           <div className="mt-5 space-y-2">
             <div className="h-16 animate-pulse rounded-xl bg-neutral-100" />
@@ -251,7 +226,6 @@ export default function UserDetail({
         ) : (
           <p className="mt-5 text-sm text-neutral-400">Could not load full profile.</p>
         )}
-      </div>
     </div>
   );
 }

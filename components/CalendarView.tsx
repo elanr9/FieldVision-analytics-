@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { dayKey } from '@/lib/dates';
 import type { UserRecord } from '@/lib/types';
@@ -8,13 +9,7 @@ import StatusBadge from './StatusBadge';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Month calendar of real signups. Clicking a day lists who signed up. */
-export default function CalendarView({
-  users,
-  onSelect,
-}: {
-  users: UserRecord[];
-  onSelect: (u: UserRecord) => void;
-}) {
+export default function CalendarView({ users }: { users: UserRecord[] }) {
   const [monthStart, setMonthStart] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -134,9 +129,8 @@ export default function CalendarView({
             <ul className="divide-y divide-neutral-100">
               {selectedUsers.map(u => (
                 <li key={u.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(u)}
+                  <Link
+                    href={`/users/${u.id}`}
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
                   >
                     <div className="min-w-0">
@@ -144,7 +138,7 @@ export default function CalendarView({
                       <p className="truncate text-xs text-neutral-500">{u.email}</p>
                     </div>
                     <StatusBadge status={u.status} interval={u.interval} />
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>

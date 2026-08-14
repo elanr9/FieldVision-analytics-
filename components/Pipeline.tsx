@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo } from 'react';
 import { daysAgo, hoursUntil } from '@/lib/contact';
 import {
@@ -13,11 +14,9 @@ import ContactActions from './ContactActions';
 function UserCard({
   user,
   note,
-  onSelect,
 }: {
   user: UserRecord;
   note: string;
-  onSelect: (u: UserRecord) => void;
 }) {
   const facts = [user.team, user.gradYear ? `'${String(user.gradYear).slice(-2)}` : null]
     .filter(Boolean)
@@ -25,20 +24,16 @@ function UserCard({
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => onSelect(user)}
-        className="flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-neutral-50 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div className="min-w-0">
+      <div className="flex w-full flex-col gap-2 px-4 py-3 hover:bg-neutral-50 sm:flex-row sm:items-center sm:justify-between">
+        <Link href={`/users/${user.id}`} className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">
             {user.name}
             {facts && <span className="ml-2 font-normal text-neutral-500">{facts}</span>}
           </p>
           <p className="truncate text-xs text-neutral-500">{note}</p>
-        </div>
+        </Link>
         <ContactActions user={user} />
-      </button>
+      </div>
     </li>
   );
 }
@@ -57,23 +52,19 @@ function cardNote(user: UserRecord, stage: PipelineStage): string {
       return `Finished onboarding ${daysAgo(user.signupDate)}, never started trial`;
     case 'churned':
       return user.paidAt ? `Last paid ${daysAgo(user.paidAt)}` : 'Canceled after paying';
-    case 'in_onboarding':
+    case 'in_onboarding': {
+      const verb = user.onboardingActive ? 'Currently at' : 'Stuck at';
       return user.onboardingStepLabel
-        ? `Stuck at "${user.onboardingStepLabel}" · signed up ${daysAgo(user.signupDate)}`
-        : `Stuck at step ${(user.onboardingStepIndex ?? 0) + 1} · signed up ${daysAgo(user.signupDate)}`;
+        ? `${verb} "${user.onboardingStepLabel}" · signed up ${daysAgo(user.signupDate)}`
+        : `${verb} step ${(user.onboardingStepIndex ?? 0) + 1} · signed up ${daysAgo(user.signupDate)}`;
+    }
     case 'never_onboarded':
       return `Signed up ${daysAgo(user.signupDate)}, no activity`;
   }
 }
 
 /** Sales pipeline: everyone worth reaching out to, grouped by why. */
-export default function Pipeline({
-  users,
-  onSelect,
-}: {
-  users: UserRecord[];
-  onSelect: (u: UserRecord) => void;
-}) {
+export default function Pipeline({ users }: { users: UserRecord[] }) {
   const buckets = useMemo(() => {
     const map = new Map<PipelineStage, UserRecord[]>();
     for (const stage of PIPELINE_ORDER) map.set(stage, []);
@@ -111,7 +102,7 @@ export default function Pipeline({
             </div>
             <ul className="divide-y divide-neutral-100">
               {list.map(u => (
-                <UserCard key={u.id} user={u} note={cardNote(u, stage)} onSelect={onSelect} />
+                <UserCard key={u.id} user={u} note={cardNote(u, stage)} />
               ))}
             </ul>
           </section>

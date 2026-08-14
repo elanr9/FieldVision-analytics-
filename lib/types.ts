@@ -50,6 +50,7 @@ export interface IntakeRow {
   user_id: string;
   completed: boolean;
   current_step_index: number;
+  updated_at: string | null;
   phone_number: string | null;
   club_team: string | null;
   position: string | null;
@@ -84,6 +85,8 @@ export interface UserRecord {
   /** True for demo, ambassador, and admin accounts. Excluded from all metrics. */
   excludedFromMetrics: boolean;
   onboarding: 'none' | 'in_progress' | 'completed';
+  /** True when the intake row was updated within the last hour, meaning the user is likely still onboarding right now */
+  onboardingActive: boolean;
   onboardingStepIndex: number | null;
   onboardingStepId: string | null;
   onboardingStepLabel: string | null;

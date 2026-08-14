@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { formatDay } from '@/lib/dates';
 import { STATUS_LABEL, type UserRecord, type UserStatus } from '@/lib/types';
@@ -16,14 +17,8 @@ const FILTERS: (UserStatus | 'all')[] = [
   'comped',
 ];
 
-/** Full user list, searchable and filterable. Tap a row for details. */
-export default function UserTable({
-  users,
-  onSelect,
-}: {
-  users: UserRecord[];
-  onSelect: (u: UserRecord) => void;
-}) {
+/** Full user list, searchable and filterable. Tap a row to open the profile. */
+export default function UserTable({ users }: { users: UserRecord[] }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<UserStatus | 'all'>('all');
 
@@ -73,11 +68,10 @@ export default function UserTable({
 
       <ul className="divide-y divide-neutral-100">
         {filtered.map(u => (
-          <li key={u.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(u)}
-              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50"
+          <li key={u.id} className="flex items-center hover:bg-neutral-50">
+            <Link
+              href={`/users/${u.id}`}
+              className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
@@ -97,14 +91,14 @@ export default function UserTable({
                   {u.phone ? ` · ${u.phone}` : ''}
                 </p>
               </div>
-              <div className="hidden shrink-0 sm:block">
-                <ContactActions user={u} />
-              </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <StatusBadge status={u.status} interval={u.interval} />
                 <span className="text-[10px] text-neutral-400">Joined {formatDay(u.signupDate)}</span>
               </div>
-            </button>
+            </Link>
+            <div className="hidden shrink-0 pr-4 sm:block">
+              <ContactActions user={u} />
+            </div>
           </li>
         ))}
         {filtered.length === 0 && (

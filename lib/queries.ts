@@ -4,6 +4,9 @@ import { normalizePhone } from './contact';
 import { resolveFromIntake } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
+/** Intake updated within this window means the user is likely still onboarding right now */
+const ONBOARDING_ACTIVE_MS = 60 * 60 * 1000;
+
 function adminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -38,7 +41,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase
       .from('user_onboarding_intake')
       .select(
-        'user_id, completed, current_step_index, phone_number, club_team, position, grad_year, parent_first_name, education_level, has_emailed_coaches, league_level, pro_aspiration, parent_invite_choice',
+        'user_id, completed, current_step_index, updated_at, phone_number, club_team, position, grad_year, parent_first_name, education_level, has_emailed_coaches, league_level, pro_aspiration, parent_invite_choice',
       ),
     supabase.from('parent_invites').select('player_user_id, parent_email'),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
@@ -127,6 +130,10 @@ export async function loadUsers(): Promise<UserRecord[]> {
       isParent,
       excludedFromMetrics: c.excludedFromMetrics,
       onboarding,
+      onboardingActive:
+        onboarding === 'in_progress' &&
+        intake?.updated_at != null &&
+        now.getTime() - new Date(intake.updated_at).getTime() < ONBOARDING_ACTIVE_MS,
       onboardingStepIndex: intake?.current_step_index ?? null,
       onboardingStepId: resolved?.stepId ?? null,
       onboardingStepLabel: resolved?.label ?? null,
@@ -144,4 +151,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
       ),
     };
   });
+}
+
+export async function loadUserById(id: string): Promise<UserRecord | null> {
+  return (await loadUsers()).find(u => u.id === id) ?? null;
 }

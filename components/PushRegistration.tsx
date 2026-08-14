@@ -42,10 +42,8 @@ interface CapacitorGlobal {
   Plugins?: { PushNotifications?: PushNotificationsPlugin };
 }
 
-export const OPEN_USER_EVENT = 'fv:open-user';
-
 export function openUserFromPush(userId: string) {
-  window.dispatchEvent(new CustomEvent(OPEN_USER_EVENT, { detail: { userId } }));
+  window.location.assign(`/users/${userId}`);
 }
 
 interface Banner {

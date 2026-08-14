@@ -81,11 +81,11 @@ export function buildFactSheet(user: UserRecord, activity: UserActivity): string
       user.onboarding === 'completed'
         ? 'completed'
         : user.onboarding === 'in_progress'
-          ? `stopped at step ${(user.onboardingStepIndex ?? 0) + 1}${
+          ? `${user.onboardingActive ? 'currently going through it, now at' : 'stopped at'} step ${(user.onboardingStepIndex ?? 0) + 1}${
               user.onboardingStepId
                 ? ` (${user.onboardingStepId}: ${user.onboardingStepLabel ?? ''})`
                 : ''
-            }, never finished`
+            }${user.onboardingActive ? ', active within the last hour' : ', never finished'}`
           : 'never started'
     }`,
   );
