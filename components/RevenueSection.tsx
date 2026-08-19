@@ -21,11 +21,15 @@ export default function RevenueSection({
   from,
   to,
   rangeLabel,
+  selectedKey,
+  onPick,
 }: {
   revenue: RevenueSnapshot;
   from: Date;
   to: Date;
   rangeLabel: string;
+  selectedKey: string;
+  onPick: (key: string) => void;
 }) {
   const { totalCents, byDay } = useMemo(
     () => aggregateRevenueInRange(revenue.events, from, to),
@@ -63,7 +67,13 @@ export default function RevenueSection({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+        <button
+          type="button"
+          onClick={() => onPick('rev-gross')}
+          className={`rounded-2xl border bg-white p-3 text-left sm:p-4 ${
+            selectedKey === 'rev-gross' ? 'border-neutral-900' : 'border-neutral-200'
+          }`}
+        >
           <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
             Gross · {rangeLabel}
           </p>
@@ -73,8 +83,14 @@ export default function RevenueSection({
           <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
             Succeeded payments, $0 excluded
           </p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+        </button>
+        <button
+          type="button"
+          onClick={() => onPick('rev-mrr')}
+          className={`rounded-2xl border bg-white p-3 text-left sm:p-4 ${
+            selectedKey === 'rev-mrr' ? 'border-neutral-900' : 'border-neutral-200'
+          }`}
+        >
           <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
             MRR
           </p>
@@ -84,8 +100,14 @@ export default function RevenueSection({
           <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
             ARR {formatUsd(revenue.mrrCents * 12)} · {revenue.activeSubscriptionCount} subs
           </p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-3 sm:p-4">
+        </button>
+        <button
+          type="button"
+          onClick={() => onPick('rev-all')}
+          className={`rounded-2xl border bg-white p-3 text-left sm:p-4 ${
+            selectedKey === 'rev-all' ? 'border-neutral-900' : 'border-neutral-200'
+          }`}
+        >
           <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-[11px]">
             All time
           </p>
@@ -95,7 +117,7 @@ export default function RevenueSection({
           <p className="mt-1 text-[10px] text-neutral-500 sm:text-xs">
             {revenue.events.length} succeeded payments
           </p>
-        </div>
+        </button>
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4">

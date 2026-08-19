@@ -14,11 +14,15 @@ export default function OnboardingAnalytics({
   rangeLabel,
   from,
   to,
+  selectedKey,
+  onPick,
 }: {
   cohort: UserRecord[];
   rangeLabel: string;
   from: Date;
   to: Date;
+  selectedKey: string;
+  onPick: (key: string, title: string, users: UserRecord[]) => void;
 }) {
   const kpis = useMemo(() => computeOnboardingKpis(cohort), [cohort]);
   const dropOff = useMemo(() => computeDropOff(cohort), [cohort]);
@@ -73,21 +77,45 @@ export default function OnboardingAnalytics({
         </h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
-            { label: 'Started', value: kpis.started },
-            { label: 'Completed', value: kpis.completed },
-            { label: 'In progress', value: kpis.inProgress },
-            { label: 'Completion', value: `${kpis.completionRate}%` },
+            {
+              key: 'onb-started',
+              label: 'Started',
+              value: String(kpis.started),
+              users: cohort.filter(u => u.onboarding !== 'none'),
+            },
+            {
+              key: 'onb-completed',
+              label: 'Completed',
+              value: String(kpis.completed),
+              users: cohort.filter(u => u.onboarding === 'completed'),
+            },
+            {
+              key: 'onb-progress',
+              label: 'In progress',
+              value: String(kpis.inProgress),
+              users: cohort.filter(u => u.onboarding === 'in_progress'),
+            },
           ].map(card => (
-            <div
-              key={card.label}
-              className="rounded-2xl border border-neutral-200 bg-white p-3"
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => onPick(card.key, card.label, card.users)}
+              className={`rounded-2xl border bg-white p-3 text-left ${
+                selectedKey === card.key ? 'border-neutral-900' : 'border-neutral-200'
+              }`}
             >
               <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
                 {card.label}
               </p>
               <p className="mt-1 text-2xl font-bold tabular-nums">{card.value}</p>
-            </div>
+            </button>
           ))}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Completion
+            </p>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{kpis.completionRate}%</p>
+          </div>
         </div>
       </section>
 
@@ -116,30 +144,48 @@ export default function OnboardingAnalytics({
         {dropOff.length === 0 ? (
           <p className="text-sm text-neutral-500">No one is stuck in onboarding for this range.</p>
         ) : (
-          <ul className="space-y-2">
-            {dropOff.map(row => (
-              <li
-                key={row.stepId}
-                className="rounded-2xl border border-neutral-200 bg-white p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-neutral-500">
-                      {row.chapterLabel} · {row.stepId}
-                    </p>
-                    <p className="mt-0.5 text-sm font-semibold leading-snug">{row.label}</p>
-                  </div>
-                  <p className="shrink-0 text-lg font-bold tabular-nums">{row.count}</p>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                  <div
-                    className="h-full rounded-full bg-amber-500"
-                    style={{ width: `${maxDrop ? (row.count / maxDrop) * 100 : 0}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+            <ul className="space-y-2">
+              {dropOff.map(row => (
+                <li key={row.stepId}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onPick(
+                        `onb-step-${row.stepId}`,
+                        row.label,
+                        cohort.filter(
+                          u =>
+                            u.onboarding === 'in_progress' &&
+                            (u.onboardingStepId ??
+                              `unknown_${u.onboardingStepIndex ?? '?'}`) === row.stepId,
+                        ),
+                      )
+                    }
+                    className={`w-full rounded-2xl border bg-white p-3 text-left ${
+                      selectedKey === `onb-step-${row.stepId}`
+                        ? 'border-neutral-900'
+                        : 'border-neutral-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium text-neutral-500">
+                          {row.chapterLabel} · {row.stepId}
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold leading-snug">{row.label}</p>
+                      </div>
+                      <p className="shrink-0 text-lg font-bold tabular-nums">{row.count}</p>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                      <div
+                        className="h-full rounded-full bg-amber-500"
+                        style={{ width: `${maxDrop ? (row.count / maxDrop) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
         )}
       </section>
 
@@ -149,16 +195,28 @@ export default function OnboardingAnalytics({
         </h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {chapters.map(ch => (
-            <div
+            <button
               key={ch.chapter}
-              className="rounded-2xl border border-neutral-200 bg-white p-3"
+              type="button"
+              onClick={() =>
+                onPick(
+                  `onb-ch-${ch.chapter}`,
+                  ch.label,
+                  cohort.filter(
+                    u => u.onboarding === 'in_progress' && u.onboardingChapter === ch.chapter,
+                  ),
+                )
+              }
+              className={`rounded-2xl border bg-white p-3 text-left ${
+                selectedKey === `onb-ch-${ch.chapter}` ? 'border-neutral-900' : 'border-neutral-200'
+              }`}
             >
               <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
                 {ch.label}
               </p>
               <p className="mt-1 text-xl font-bold tabular-nums">{ch.count}</p>
               <p className="text-[11px] text-neutral-500">stuck</p>
-            </div>
+            </button>
           ))}
         </div>
       </section>

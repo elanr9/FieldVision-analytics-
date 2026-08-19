@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { addDays, startOfDay } from '@/lib/dates';
-import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
+import { formatUsd, type RevenueEvent, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
 import CalendarView from './CalendarView';
 import Funnel from './Funnel';
@@ -10,7 +10,7 @@ import OnboardingAnalytics from './OnboardingAnalytics';
 import Pipeline from './Pipeline';
 import RevenueSection from './RevenueSection';
 import TrendChart from './TrendChart';
-import UserTable from './UserTable';
+import UserTable, { UserList } from './UserTable';
 
 type RangeKey = '7d' | '30d' | 'all' | 'custom';
 type Tab = 'overview' | 'onboarding' | 'pipeline' | 'users' | 'calendar';
@@ -30,6 +30,25 @@ const TAB_LABEL: Record<Tab, string> = {
   calendar: 'Calendar',
 };
 
+function usersFromEvents(
+  users: UserRecord[],
+  events: RevenueEvent[],
+  from?: Date,
+  to?: Date,
+): UserRecord[] {
+  const fromMs = from?.getTime();
+  const toMs = to?.getTime();
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (!event.userId) continue;
+    const t = new Date(event.paidAt).getTime();
+    if (fromMs != null && t < fromMs) continue;
+    if (toMs != null && t > toMs) continue;
+    ids.add(event.userId);
+  }
+  return users.filter(u => ids.has(u.id));
+}
+
 export default function Dashboard({
   users,
   revenue,
@@ -41,6 +60,9 @@ export default function Dashboard({
   const [range, setRange] = useState<RangeKey>('30d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [people, setPeople] = useState<{ key: string; title: string; users: UserRecord[] } | null>(
+    null,
+  );
 
   /** Real users only. Demo, ambassador, and admin accounts never enter metrics. */
   const realUsers = useMemo(() => users.filter(u => !u.excludedFromMetrics), [users]);
@@ -71,15 +93,78 @@ export default function Dashboard({
     [realUsers, from, to],
   );
 
-  const payingNow = realUsers.filter(u => u.status === 'paying').length;
-  const trialingNow = realUsers.filter(u => u.status === 'trialing').length;
-  const followUps = realUsers.filter(u => u.pipeline !== null).length;
+  const payingUsers = useMemo(
+    () => realUsers.filter(u => u.status === 'paying'),
+    [realUsers],
+  );
+  const trialingUsers = useMemo(
+    () => realUsers.filter(u => u.status === 'trialing'),
+    [realUsers],
+  );
+  const followUpUsers = useMemo(
+    () => realUsers.filter(u => u.pipeline !== null),
+    [realUsers],
+  );
+  const payingNow = payingUsers.length;
+  const trialingNow = trialingUsers.length;
+  const followUps = followUpUsers.length;
 
-  const headerStats: { label: string; value: string; accent?: boolean }[] = [
-    { label: 'Paying', value: String(payingNow), accent: true },
-    ...(revenue.configured ? [{ label: 'MRR', value: formatUsd(revenue.mrrCents) }] : []),
-    { label: 'Trialing', value: String(trialingNow) },
-    { label: 'Follow ups', value: String(followUps) },
+  useEffect(() => {
+    setPeople(null);
+  }, [range, customFrom, customTo]);
+
+  function openPeople(key: string, title: string, list: UserRecord[]) {
+    setPeople({ key, title, users: list });
+    if (tab !== 'overview' && tab !== 'onboarding') setTab('overview');
+  }
+
+  const visiblePeople = people ?? {
+    key: 'funnel-signed-up',
+    title: 'Signed up',
+    users: cohort,
+  };
+
+  const headerStats: {
+    key: string;
+    label: string;
+    value: string;
+    accent?: boolean;
+    title: string;
+    users: UserRecord[];
+  }[] = [
+    {
+      key: 'paying',
+      label: 'Paying',
+      value: String(payingNow),
+      accent: true,
+      title: 'Paying',
+      users: payingUsers,
+    },
+    ...(revenue.configured
+      ? [
+          {
+            key: 'rev-mrr',
+            label: 'MRR',
+            value: formatUsd(revenue.mrrCents),
+            title: 'Paying',
+            users: payingUsers,
+          },
+        ]
+      : []),
+    {
+      key: 'trialing',
+      label: 'Trialing',
+      value: String(trialingNow),
+      title: 'Trialing',
+      users: trialingUsers,
+    },
+    {
+      key: 'follow-ups',
+      label: 'Follow ups',
+      value: String(followUps),
+      title: 'Follow ups',
+      users: followUpUsers,
+    },
   ];
 
   const showRangePicker = tab === 'overview' || tab === 'onboarding';
@@ -91,7 +176,14 @@ export default function Dashboard({
           <h1 className="shrink-0 text-lg font-bold sm:text-xl">FieldVision</h1>
           <div className="no-scrollbar flex items-center gap-4 overflow-x-auto">
             {headerStats.map(s => (
-              <div key={s.label} className="shrink-0 text-right">
+              <button
+                key={s.label}
+                type="button"
+                onClick={() => openPeople(s.key, s.title, s.users)}
+                className={`shrink-0 text-right ${
+                  visiblePeople.key === s.key ? 'opacity-100' : 'opacity-80'
+                }`}
+              >
                 <p
                   className={`text-sm font-bold tabular-nums leading-tight ${
                     s.accent ? 'text-emerald-600' : ''
@@ -102,7 +194,7 @@ export default function Dashboard({
                 <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-neutral-400">
                   {s.label}
                 </p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -169,17 +261,43 @@ export default function Dashboard({
 
         {tab === 'overview' && (
           <div className="space-y-8">
+            <UserList title={visiblePeople.title} users={visiblePeople.users} />
             <section>
               <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
                 Revenue · {RANGE_LABEL[range]}
               </h2>
-              <RevenueSection revenue={revenue} from={from} to={to} rangeLabel={RANGE_LABEL[range]} />
+              <RevenueSection
+                revenue={revenue}
+                from={from}
+                to={to}
+                rangeLabel={RANGE_LABEL[range]}
+                selectedKey={visiblePeople.key}
+                onPick={key => {
+                  if (key === 'rev-mrr') {
+                    openPeople(key, 'Paying', payingUsers);
+                    return;
+                  }
+                  if (key === 'rev-gross') {
+                    openPeople(
+                      key,
+                      'Paid this period',
+                      usersFromEvents(realUsers, revenue.events, from, to),
+                    );
+                    return;
+                  }
+                  openPeople(key, 'Paid all time', usersFromEvents(realUsers, revenue.events));
+                }}
+              />
             </section>
             <section>
               <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
                 Funnel · {RANGE_LABEL[range]}
               </h2>
-              <Funnel cohort={cohort} />
+              <Funnel
+                cohort={cohort}
+                selectedKey={visiblePeople.key}
+                onPick={(key, title, list) => openPeople(key, title, list)}
+              />
             </section>
             <section>
               <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
@@ -191,12 +309,17 @@ export default function Dashboard({
         )}
 
         {tab === 'onboarding' && (
-          <OnboardingAnalytics
-            cohort={cohort}
-            rangeLabel={RANGE_LABEL[range]}
-            from={from}
-            to={to}
-          />
+          <div className="space-y-8">
+            {people && <UserList title={people.title} users={people.users} />}
+            <OnboardingAnalytics
+              cohort={cohort}
+              rangeLabel={RANGE_LABEL[range]}
+              from={from}
+              to={to}
+              selectedKey={visiblePeople.key}
+              onPick={(key, title, list) => openPeople(key, title, list)}
+            />
+          </div>
         )}
 
         {tab === 'pipeline' && <Pipeline users={realUsers} />}
