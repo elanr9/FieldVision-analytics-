@@ -19,8 +19,8 @@ export interface RevenueSnapshot {
 
 const FIELDVISION_TYPE = 'fieldvision_subscription';
 
-// TEMPORARY: inflates all displayed revenue 10x. Set back to 1 to restore real numbers.
-const TEMP_DISPLAY_MULTIPLIER = 10;
+// TEMPORARY: inflates all displayed revenue. Set back to 1 to restore real numbers.
+const TEMP_DISPLAY_MULTIPLIER = 1;
 
 /**
  * Strips every character that cannot appear in a real Stripe key. Pasting
