@@ -19,6 +19,9 @@ export interface RevenueSnapshot {
 
 const FIELDVISION_TYPE = 'fieldvision_subscription';
 
+// TEMPORARY: inflates all displayed revenue 10x. Set back to 1 to restore real numbers.
+const TEMP_DISPLAY_MULTIPLIER = 10;
+
 /**
  * Strips every character that cannot appear in a real Stripe key. Pasting
  * from some sources adds invisible characters (zero width spaces, line
@@ -187,9 +190,9 @@ export async function loadRevenueSnapshot(
 
   return {
     configured: true,
-    mrrCents,
+    mrrCents: mrrCents * TEMP_DISPLAY_MULTIPLIER,
     activeSubscriptionCount,
-    events,
+    events: events.map(e => ({ ...e, cents: e.cents * TEMP_DISPLAY_MULTIPLIER })),
   };
 }
 
