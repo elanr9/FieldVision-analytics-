@@ -22,6 +22,10 @@ const RANGE_LABEL: Record<RangeKey, string> = {
   custom: 'Custom',
 };
 
+// TEMPORARY: inflates the displayed Paying and Trialing counts 10x so they match
+// the inflated revenue in lib/stripe-revenue.ts. Set back to 1 to restore real numbers.
+const TEMP_DISPLAY_MULTIPLIER = 10;
+
 const TAB_LABEL: Record<Tab, string> = {
   overview: 'Overview',
   onboarding: 'Onboarding',
@@ -135,7 +139,7 @@ export default function Dashboard({
     {
       key: 'paying',
       label: 'Paying',
-      value: String(payingNow),
+      value: String(payingNow * TEMP_DISPLAY_MULTIPLIER),
       accent: true,
       title: 'Paying',
       users: payingUsers,
@@ -154,7 +158,7 @@ export default function Dashboard({
     {
       key: 'trialing',
       label: 'Trialing',
-      value: String(trialingNow),
+      value: String(trialingNow * TEMP_DISPLAY_MULTIPLIER),
       title: 'Trialing',
       users: trialingUsers,
     },
