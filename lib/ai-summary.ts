@@ -70,54 +70,7 @@ function ago(iso: string): string {
   return months === 1 ? 'about a month ago' : `about ${months} months ago`;
 }
 
-export function buildFactSheet(user: UserRecord, activity: UserActivity): string {
-  const facts: string[] = [];
-  facts.push(`Name: ${user.name}${user.isParent ? ' (parent account)' : ''}`);
-  if (user.team) facts.push(`Team: ${user.team}`);
-  if (user.gradYear) facts.push(`Grad year: ${user.gradYear}`);
-  facts.push(`Signed up: ${ago(user.signupDate)}`);
-  facts.push(
-    `Onboarding: ${
-      user.onboarding === 'completed'
-        ? 'completed'
-        : user.onboarding === 'in_progress'
-          ? `${user.onboardingActive ? 'currently going through it, now at' : 'stopped at'} step ${(user.onboardingStepIndex ?? 0) + 1}${
-              user.onboardingStepId
-                ? ` (${user.onboardingStepId}: ${user.onboardingStepLabel ?? ''})`
-                : ''
-            }${user.onboardingActive ? ', active within the last hour' : ', never finished'}`
-          : 'never started'
-    }`,
-  );
-  if (user.trialStartedAt) {
-    facts.push(`Free trial started: ${ago(user.trialStartedAt)}`);
-    if (user.trialEndsAt) {
-      const ended = new Date(user.trialEndsAt).getTime() < Date.now();
-      facts.push(ended ? `Trial ended: ${ago(user.trialEndsAt)}` : 'Trial is still active');
-    }
-  } else {
-    facts.push('Never started a free trial');
-  }
-  facts.push(`Current status: ${user.status}${user.status === 'paying' ? ` (${user.interval})` : ''}`);
-  if (user.status === 'churned' && user.paidAt) facts.push(`Last payment: ${ago(user.paidAt)}`);
-  if (activity.emailsSent > 0) {
-    facts.push(
-      `Coach outreach: sent ${activity.emailsSent} emails (first ${ago(activity.firstEmailAt!)}, last ${ago(activity.lastEmailAt!)}), ${activity.emailsOpened} opened, ${activity.repliesReceived} coach replies`,
-    );
-  } else {
-    facts.push('Coach outreach: never sent a single email');
-  }
-  if (activity.videoProjects > 0) {
-    facts.push(
-      `Highlight videos: ${activity.videoProjects} projects, ${activity.videosPublished} published`,
-    );
-  } else {
-    facts.push('Highlight videos: none');
-  }
-  return facts.join('\n');
-}
-
-/** Deterministic rundown used when OPENAI_API_KEY is not set or the API fails. */
+/** Deterministic rundown for user activity summaries. */
 export function fallbackSummary(user: UserRecord, activity: UserActivity): string {
   const parts: string[] = [];
 
@@ -165,65 +118,19 @@ export function fallbackSummary(user: UserRecord, activity: UserActivity): strin
   return `${joined}.`;
 }
 
-const cache = new Map<string, { summary: string; source: 'ai' | 'rules'; at: number }>();
+const cache = new Map<string, { summary: string; at: number }>();
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function generateSummary(
   user: UserRecord,
-): Promise<{ summary: string; source: 'ai' | 'rules' }> {
+): Promise<{ summary: string; source: 'rules' }> {
   const cached = cache.get(user.id);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return { summary: cached.summary, source: cached.source };
+    return { summary: cached.summary, source: 'rules' };
   }
 
   const activity = await loadActivity(user.id);
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-
-  let summary: string;
-  let source: 'ai' | 'rules';
-
-  if (!apiKey) {
-    summary = fallbackSummary(user, activity);
-    source = 'rules';
-  } else {
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          temperature: 0.4,
-          max_tokens: 130,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You brief the founder of FieldVision, a soccer recruiting app, on one user. Write 1 to 3 short sentences in plain spoken English, like a teammate catching them up. Lead with where the user dropped off or what state they are in, then the most notable activity detail. Be specific with numbers and timing from the facts. No greetings, no bullet points, no advice unless the next step is obvious in one clause.',
-            },
-            {
-              role: 'user',
-              content: `Facts about this user:\n${buildFactSheet(user, activity)}`,
-            },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`OpenAI ${res.status}`);
-      const data = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const text = data.choices?.[0]?.message?.content?.trim();
-      if (!text) throw new Error('Empty completion');
-      summary = text;
-      source = 'ai';
-    } catch {
-      summary = fallbackSummary(user, activity);
-      source = 'rules';
-    }
-  }
-
-  cache.set(user.id, { summary, source, at: Date.now() });
-  return { summary, source };
+  const summary = fallbackSummary(user, activity);
+  cache.set(user.id, { summary, at: Date.now() });
+  return { summary, source: 'rules' };
 }
