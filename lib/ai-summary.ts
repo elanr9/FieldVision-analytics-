@@ -78,7 +78,9 @@ export function fallbackSummary(user: UserRecord, activity: UserActivity): strin
     parts.push(`${user.name.split(' ')[0]} signed up ${ago(user.signupDate)} and never even started onboarding`);
   } else if (user.onboarding === 'in_progress') {
     const stepBit = user.onboardingStepLabel
-      ? `stalled at "${user.onboardingStepLabel}" (step ${(user.onboardingStepIndex ?? 0) + 1})`
+      ? `stalled at "${user.onboardingStepLabel}" (step ${(user.onboardingStepIndex ?? 0) + 1}${
+          user.onboardingTotalSteps ? ` of ${user.onboardingTotalSteps}` : ''
+        })`
       : `stalled at onboarding step ${(user.onboardingStepIndex ?? 0) + 1}`;
     parts.push(`${user.name.split(' ')[0]} signed up ${ago(user.signupDate)} but ${stepBit}`);
   } else if (!user.trialStartedAt) {

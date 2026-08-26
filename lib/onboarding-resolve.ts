@@ -68,25 +68,28 @@ export function labelForStep(step: OnboardingStepDef, isParent: boolean): string
   return step.id;
 }
 
-/** Resolve stuck step from intake index + visibility fields. */
+/** Resolve stuck step from intake catalog index + visibility fields. */
 export function resolveFromIntake(
   stepIndex: number | null,
   fields: OnboardingVisibilityFields,
   isParent: boolean,
 ): ResolvedOnboardingStep | null {
   if (stepIndex == null || stepIndex < 0) return null;
+
+  const catalogStep = ONBOARDING_STEPS[stepIndex];
+  if (!catalogStep) return null;
+
   const visible = getVisibleSteps(fields, isParent);
-  if (visible.length === 0) return null;
-  const idx = Math.min(stepIndex, visible.length - 1);
-  const step = visible[idx];
+  const visibleIndex = visible.findIndex(s => s.id === catalogStep.id);
+
   return {
-    stepId: step.id,
-    stepIndex: idx,
+    stepId: catalogStep.id,
+    stepIndex: visibleIndex >= 0 ? visibleIndex : stepIndex,
     totalSteps: visible.length,
-    chapter: step.chapter,
-    chapterLabel: CHAPTER_LABELS[step.chapter],
-    kind: step.kind,
-    label: labelForStep(step, isParent),
+    chapter: catalogStep.chapter,
+    chapterLabel: CHAPTER_LABELS[catalogStep.chapter],
+    kind: catalogStep.kind,
+    label: labelForStep(catalogStep, isParent),
   };
 }
 
@@ -108,4 +111,18 @@ export function resolveFromStepId(
     kind: step.kind,
     label: labelForStep(step, isParent),
   };
+}
+
+/** Derive onboarding status from intake plus stronger downstream signals. */
+export function deriveOnboardingStatus(
+  intake: { completed: boolean } | undefined,
+  trialStartedAt: string | null,
+  hasFullPlan: boolean,
+): 'none' | 'in_progress' | 'completed' {
+  if (!intake) {
+    if (trialStartedAt || hasFullPlan) return 'completed';
+    return 'none';
+  }
+  if (intake.completed || trialStartedAt || hasFullPlan) return 'completed';
+  return 'in_progress';
 }

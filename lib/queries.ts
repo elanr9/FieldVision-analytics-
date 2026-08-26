@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
-import { resolveFromIntake } from './onboarding-resolve';
+import { deriveOnboardingStatus, resolveFromIntake } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
 /** Intake updated within this window means the user is likely still onboarding right now */
@@ -81,11 +81,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
     const c = classifyUser(profile, sub, now);
 
     const isParent = profile.account_type === 'parent';
-    const onboarding: UserRecord['onboarding'] = !intake
-      ? 'none'
-      : intake.completed
-        ? 'completed'
-        : 'in_progress';
+    const hasFullPlan = sub?.plan === 'full';
+    const onboarding = deriveOnboardingStatus(intake, profile.trial_started_at, hasFullPlan);
 
     const trialEndsAt = profile.trial_started_at
       ? new Date(new Date(profile.trial_started_at).getTime() + TRIAL_MS).toISOString()
@@ -134,7 +131,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
         onboarding === 'in_progress' &&
         intake?.updated_at != null &&
         now.getTime() - new Date(intake.updated_at).getTime() < ONBOARDING_ACTIVE_MS,
-      onboardingStepIndex: intake?.current_step_index ?? null,
+      onboardingStepIndex: resolved?.stepIndex ?? null,
       onboardingStepId: resolved?.stepId ?? null,
       onboardingStepLabel: resolved?.label ?? null,
       onboardingChapter: resolved?.chapter ?? null,
