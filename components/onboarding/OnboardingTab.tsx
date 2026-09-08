@@ -6,6 +6,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import type { Funnel, FunnelChapterKey, Paywall } from '@/lib/funnel';
 import type { UserRecord } from '@/lib/types';
 import { GraphView } from './GraphView';
+import { PaywallView } from './PaywallView';
 import { StepsView } from './StepsView';
 import { SummaryView } from './SummaryView';
 
@@ -26,7 +27,7 @@ export interface OnboardingTabProps {
   push: (s: Screen) => void;
 }
 
-export function OnboardingTab({ funnel, users, push }: OnboardingTabProps) {
+export function OnboardingTab({ funnel, paywall, users, push }: OnboardingTabProps) {
   const [view, setView] = useState<View>('summary');
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [zoomChapter, setZoomChapter] = useState<FunnelChapterKey | null>(null);
@@ -46,6 +47,7 @@ export function OnboardingTab({ funnel, users, push }: OnboardingTabProps) {
         {view === 'summary' && <SummaryView funnel={funnel} onStep={goStep} />}
         {view === 'funnel' && <GraphView funnel={funnel} selectedStep={selectedStep} zoomChapter={zoomChapter} onSelectStep={setSelectedStep} onZoom={setZoomChapter} />}
         {view === 'steps' && <StepsView funnel={funnel} users={users} push={push} onStep={goStep} />}
+        {view === 'paywall' && <PaywallView paywall={paywall} />}
       </Fade>
     </div>
   );

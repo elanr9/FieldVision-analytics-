@@ -70,6 +70,8 @@ const users: UserRecord[] = [
   user('u3', { signupDate: BEFORE_RANGE }),
   user('u4', { signupDate: BEFORE_RANGE }),
   user('u5', { signupDate: BEFORE_RANGE }),
+  // Paid in range without a trial in range: counts nowhere in the plan split.
+  user('u6', { signupDate: BEFORE_RANGE, paidAt: IN_RANGE, interval: 'monthly' }),
   user('admin', { excludedFromMetrics: true, paidAt: IN_RANGE, trialStartedAt: IN_RANGE, interval: 'annual' }),
   user('mom', { isParent: true }),
 ];
@@ -140,7 +142,7 @@ test('started falls back to signups with an intake row when no survey_intro view
   assert.equal(noViews.steps[1].reached, 0);
 });
 
-test('paywall shares: nulls for missing events, plan split from included users', () => {
+test('paywall shares: nulls for missing events, plan split follows the trial cohort', () => {
   const paywall = buildPaywall({ users, eventUsers, range });
   assert.equal(paywall.seen, null);
   assert.equal(paywall.trialDirect, 2);

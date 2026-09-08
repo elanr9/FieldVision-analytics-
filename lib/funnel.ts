@@ -264,12 +264,11 @@ export function buildPaywall(input: BuildPaywallInput): Paywall {
     const users = input.eventUsers.get(event);
     return users ? [...users].filter(id => allowed.has(id)).length : null;
   };
-  const plans = (Object.keys(PLAN_LABELS) as Exclude<PlanInterval, 'unknown'>[]).map(key => ({
-    key,
-    label: PLAN_LABELS[key],
-    trials: included.filter(u => u.interval === key && isWithin(u.trialStartedAt, input.range)).length,
-    paid: included.filter(u => u.interval === key && isWithin(u.paidAt, input.range)).length,
-  }));
+  // Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have paid.
+  const plans = (Object.keys(PLAN_LABELS) as Exclude<PlanInterval, 'unknown'>[]).map(key => {
+    const trials = included.filter(u => u.interval === key && isWithin(u.trialStartedAt, input.range));
+    return { key, label: PLAN_LABELS[key], trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
+  });
   return {
     seen: count(PAYWALL_EVENTS.paywallViewed),
     trialDirect: count(PAYWALL_EVENTS.tryFreeTapped),
