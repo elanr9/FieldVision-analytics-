@@ -1,6 +1,50 @@
 -- Founder push notifications: every product event the analytics app should
--- know about posts to /api/notify through analytics_notify_event(), which
--- already exists and forwards (table, op, record, old_record).
+-- know about posts to /api/notify. The webhook secret lives in Vault under
+-- analytics_notify_secret (create it once with vault.create_secret).
+
+create or replace function public.analytics_notify_post(payload jsonb)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  secret text;
+begin
+  select decrypted_secret into secret
+  from vault.decrypted_secrets
+  where name = 'analytics_notify_secret'
+  limit 1;
+  if secret is null then
+    return;
+  end if;
+  perform net.http_post(
+    url := 'https://field-vision-analytics.vercel.app/api/notify',
+    body := payload,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-notify-secret', secret),
+    timeout_milliseconds := 5000
+  );
+exception when others then
+  null;
+end;
+$$;
+
+create or replace function public.analytics_notify_event()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+begin
+  perform public.analytics_notify_post(jsonb_build_object(
+    'table', TG_TABLE_NAME,
+    'op', TG_OP,
+    'record', to_jsonb(NEW),
+    'old_record', case when TG_OP = 'UPDATE' then to_jsonb(OLD) else null end
+  ));
+  return NEW;
+end;
+$$;
 
 -- Signups are not feed events and the profile trial flag carries no plan;
 -- both are now covered by user_subscriptions changes.
@@ -8,6 +52,12 @@ drop trigger if exists analytics_notify_signup on public.user_profiles;
 drop trigger if exists analytics_notify_trial on public.user_profiles;
 
 -- Subscriptions: trial start, payment, plan change, cancellation.
+drop trigger if exists analytics_notify_sub_insert on public.user_subscriptions;
+create trigger analytics_notify_sub_insert
+  after insert on public.user_subscriptions
+  for each row
+  execute function public.analytics_notify_event();
+
 drop trigger if exists analytics_notify_sub_update on public.user_subscriptions;
 create trigger analytics_notify_sub_update
   after update on public.user_subscriptions
@@ -92,24 +142,12 @@ begin
         where n.user_id = v.user_id and n.type = 'stalled' and n.created_at > v.viewed_at
       )
   loop
-    begin
-      perform net.http_post(
-        url := 'https://field-vision-analytics.vercel.app/api/notify',
-        body := jsonb_build_object(
-          'table', 'paywall_stalls',
-          'op', 'INSERT',
-          'record', jsonb_build_object('user_id', stall.user_id, 'viewed_at', stall.viewed_at),
-          'old_record', null
-        ),
-        headers := jsonb_build_object(
-          'Content-Type', 'application/json',
-          'x-notify-secret', '27491557afca537767544951c343caf52297e4c7df16c3e3'
-        ),
-        timeout_milliseconds := 5000
-      );
-    exception when others then
-      null;
-    end;
+    perform public.analytics_notify_post(jsonb_build_object(
+      'table', 'paywall_stalls',
+      'op', 'INSERT',
+      'record', jsonb_build_object('user_id', stall.user_id, 'viewed_at', stall.viewed_at),
+      'old_record', null
+    ));
   end loop;
 end;
 $$;
