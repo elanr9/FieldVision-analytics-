@@ -1,6 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { ActivityTab, countToday } from '@/components/activity/ActivityTab';
+import type { CheckinLogRow } from '@/lib/checkins';
+import type { NotificationRecord } from '@/lib/notifications';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
@@ -13,10 +16,15 @@ import type { UserRecord } from '@/lib/types';
 export default function Dashboard({
   users,
   revenue,
+  notifications = [],
+  checkinLog = [],
 }: {
   users: UserRecord[];
   revenue: RevenueSnapshot;
+  notifications?: NotificationRecord[];
+  checkinLog?: CheckinLogRow[];
 }) {
+  const [tab, setTab] = useState('overview');
   const [stack, setStack] = useState<Screen[]>([]);
   const [popping, setPopping] = useState(false);
 
@@ -50,10 +58,11 @@ export default function Dashboard({
 
   const root = (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px calc(var(--safe-bottom) + 64px)', fontFamily: 'var(--font-sans)' }}>
-      <AppHeader stats={stats} onStat={onStat} tab="overview" onTab={() => {}} />
+      <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={setTab} badge={countToday(notifications)} />
       <div style={{ paddingTop: 16 }}>
-        <Fade id="overview">
-          <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />
+        <Fade id={tab}>
+          {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={checkinLog} />}
+          {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
         </Fade>
       </div>
     </main>

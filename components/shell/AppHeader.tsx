@@ -18,11 +18,12 @@ export interface AppHeaderProps {
   onStat: (stat: HeaderStatItem) => void;
   tab: string;
   onTab: (key: string) => void;
+  /** Events today, shown as a pill on the Activity tab. */
+  badge?: number;
 }
 
-const TABS = [{ key: 'overview', label: 'Overview' }];
-
-export function AppHeader({ stats, onStat, tab, onTab }: AppHeaderProps) {
+export function AppHeader({ stats, onStat, tab, onTab, badge }: AppHeaderProps) {
+  const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'activity', label: 'Activity', badge }];
   return (
     <header style={{ position: 'sticky', top: 0, zIndex: 20, margin: '0 -16px', padding: 'calc(var(--safe-top) + 12px) 16px 0', background: 'rgb(247 248 250 / .92)', backdropFilter: 'saturate(1.4) blur(12px)', WebkitBackdropFilter: 'saturate(1.4) blur(12px)', borderBottom: '1px solid var(--border-default)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
