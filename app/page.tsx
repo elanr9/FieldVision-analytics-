@@ -1,3 +1,5 @@
+import { loadCheckinLog } from '@/lib/checkins';
+import { loadNotifications } from '@/lib/notifications';
 import { loadUsers } from '@/lib/queries';
 import { loadRevenueSnapshot, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
@@ -45,5 +47,10 @@ export default async function Home() {
     };
   }
 
-  return <Dashboard users={users} revenue={revenue} />;
+  const [notifications, checkinLog] = await Promise.all([
+    loadNotifications().catch(() => []),
+    loadCheckinLog().catch(() => []),
+  ]);
+
+  return <Dashboard users={users} revenue={revenue} notifications={notifications} checkinLog={checkinLog} />;
 }

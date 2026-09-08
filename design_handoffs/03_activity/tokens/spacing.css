@@ -1,0 +1,9 @@
+:root{
+/* 4px base, Tailwind-derived values used verbatim in the product */
+--space-0-5:2px;--space-1:4px;--space-1-5:6px;--space-2:8px;--space-2-5:10px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;
+/* Semantic */
+--gap-inline:6px;--gap-chip:4px;--gap-grid:8px;--gap-grid-wide:12px;--gap-section:32px;--gap-stack:12px;--gap-stack-lg:20px;
+--pad-card:12px;--pad-card-wide:16px;--pad-row-x:16px;--pad-row-y:12px;--pad-list-header:10px 16px;--pad-page-x:16px;
+--container-max:768px;--container-narrow:384px;--container-md:448px;
+--hit-min:44px;--hit-sm:36px;--hit-md:40px;
+}
