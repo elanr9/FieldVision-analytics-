@@ -1,3 +1,4 @@
+import { loadFunnel, loadPaywall, type Funnel, type Paywall } from '@/lib/funnel';
 import { loadUsers } from '@/lib/queries';
 import { loadRevenueSnapshot, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
@@ -7,15 +8,18 @@ export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   let users: UserRecord[] = [];
+  let funnel: Funnel | null = null;
+  let paywall: Paywall | null = null;
   let loadError: string | null = null;
 
   try {
     users = await loadUsers();
+    [funnel, paywall] = await Promise.all([loadFunnel(30, users), loadPaywall(30, users)]);
   } catch (e) {
     loadError = e instanceof Error ? e.message : String(e);
   }
 
-  if (loadError) {
+  if (loadError || funnel === null || paywall === null) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-red-200 bg-red-50 p-5">
@@ -45,5 +49,5 @@ export default async function Home() {
     };
   }
 
-  return <Dashboard users={users} revenue={revenue} />;
+  return <Dashboard users={users} revenue={revenue} funnel={funnel} paywall={paywall} />;
 }

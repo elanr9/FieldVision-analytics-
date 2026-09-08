@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
+import { OnboardingTab } from '@/components/onboarding/OnboardingTab';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
+import { includedUsers, type Funnel, type Paywall } from '@/lib/funnel';
 import { buildOverview } from '@/lib/overview';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
@@ -13,10 +15,15 @@ import type { UserRecord } from '@/lib/types';
 export default function Dashboard({
   users,
   revenue,
+  funnel,
+  paywall,
 }: {
   users: UserRecord[];
   revenue: RevenueSnapshot;
+  funnel: Funnel;
+  paywall: Paywall;
 }) {
+  const [tab, setTab] = useState('overview');
   const [stack, setStack] = useState<Screen[]>([]);
   const [popping, setPopping] = useState(false);
 
@@ -50,10 +57,11 @@ export default function Dashboard({
 
   const root = (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px calc(var(--safe-bottom) + 64px)', fontFamily: 'var(--font-sans)' }}>
-      <AppHeader stats={stats} onStat={onStat} tab="overview" onTab={() => {}} />
+      <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={setTab} />
       <div style={{ paddingTop: 16 }}>
-        <Fade id="overview">
-          <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />
+        <Fade id={tab}>
+          {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
+          {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
         </Fade>
       </div>
     </main>

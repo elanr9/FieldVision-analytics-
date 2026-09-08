@@ -20,7 +20,7 @@ export interface AppHeaderProps {
   onTab: (key: string) => void;
 }
 
-const TABS = [{ key: 'overview', label: 'Overview' }];
+const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'onboarding', label: 'Onboarding' }];
 
 export function AppHeader({ stats, onStat, tab, onTab }: AppHeaderProps) {
   return (
