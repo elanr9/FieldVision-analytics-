@@ -4,6 +4,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { CountUp, Fade, usePager } from '@/components/motion';
 import { Mini } from '@/components/overview/Mini';
 import { MiniToggle } from '@/components/overview/MiniToggle';
+import { ConversationScreen } from '@/components/profile/ConversationScreen';
 import { useDossier } from '@/components/profile/useDossier';
 import { SubHeader } from '@/components/shell/SubHeader';
 import { useNav } from '@/components/shell/nav';
@@ -67,7 +68,7 @@ function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null
 }
 
 export function ProfileScreen({ user }: ProfileScreenProps) {
-  const { pop, open, users } = useNav();
+  const { push, pop, open, users } = useNav();
   const athlete = user.isParent ? findAthlete(user, users) : null;
   const { dossier, loading } = useDossier(user.isParent ? athlete?.id ?? null : user.id);
   const profile = useMemo(() => buildProfile(user, dossier), [user, dossier]);
@@ -167,7 +168,7 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
           ))}
           {sec === 'replies' && (loading ? <Skeleton height={72} radius={12} /> : profile.replies.length === 0 ? <p style={EMPTY_TEXT}>No coach replies yet.</p> : (
             <Card padding="none" style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both' }}>
-              {replies.slice.map((r, i) => <ReplyRow key={r.id} reply={r} first={i === 0} onOpen={() => { /* ConversationScreen arrives in step 5 */ }} />)}
+              {replies.slice.map((r, i) => <ReplyRow key={r.id} reply={r} first={i === 0} onOpen={() => push({ key: 'convo-' + r.id, node: <ConversationScreen user={user} reply={r} /> })} />)}
               {replies.footer}
             </Card>
           ))}
