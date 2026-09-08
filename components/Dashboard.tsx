@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
+import { OverviewTab } from '@/components/overview/OverviewTab';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
+import { buildOverview } from '@/lib/overview';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
 
@@ -17,7 +19,9 @@ export default function Dashboard({
   const [stack, setStack] = useState<Screen[]>([]);
   const [popping, setPopping] = useState(false);
 
-  const everyone = users.filter(u => !u.excludedFromMetrics);
+  const overview = useMemo(() => buildOverview(users, revenue), [users, revenue]);
+  const real = users.filter(u => !u.excludedFromMetrics);
+  const everyone = real;
   const paying = everyone.filter(u => u.status === 'paying');
   const trialing = everyone.filter(u => u.status === 'trialing');
 
@@ -50,8 +54,7 @@ export default function Dashboard({
       <AppHeader stats={stats} onStat={onStat} tab="overview" onTab={() => {}} />
       <div style={{ paddingTop: 16 }}>
         <Fade id="overview">
-          {/* TODO(handoff-1 step 6): <OverviewTab /> */}
-          {null}
+          <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />
         </Fade>
       </div>
     </main>
