@@ -3,7 +3,7 @@ import React from 'react';
 
 export interface HeaderStatProps {
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   accent?: boolean;
   active?: boolean;
   onClick?: () => void;

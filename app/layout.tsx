@@ -3,8 +3,8 @@ import PushRegistration from '../components/PushRegistration';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'FieldVision Analytics',
-  description: 'Internal analytics for FieldVision',
+  title: 'Inkbound Analytics',
+  description: 'Internal analytics for Inkbound',
   robots: { index: false, follow: false },
 };
 
