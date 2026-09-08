@@ -1,0 +1,25 @@
+const { Tabs, HeaderStat } = window.InkboundDesignSystem_74e23a;
+const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'activity', label: 'Activity' }, { key: 'onboarding', label: 'Onboarding' }, { key: 'users', label: 'Users' }, { key: 'calendar', label: 'Calendar' }];
+function AppHeader({ stats, onStat, tab, onTab, unread }) {
+  return (
+    <header style={{ position: 'sticky', top: 0, zIndex: 20, margin: '0 -16px', padding: 'calc(var(--safe-top) + 12px) 16px 0', background: 'rgb(247 248 250 / .92)', backdropFilter: 'saturate(1.4) blur(12px)', WebkitBackdropFilter: 'saturate(1.4) blur(12px)', borderBottom: '1px solid var(--border-default)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}><img src="../../assets/inkbound-mark-flat.png" alt="" style={{ width: 28, height: 28 }} /><h1 style={{ margin: 0, font: '700 18px/1.4 var(--font-sans)', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>Inkbound</h1></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {stats.map(s => <HeaderStat key={s.key} label={s.label} value={<CountUp value={s.value} />} accent={s.accent} active onClick={() => onStat(s)} />)}
+        </div>
+      </div>
+      <Tabs style={{ marginTop: 10, paddingBottom: 8 }} value={tab} onChange={onTab} tabs={TABS.map(t => t.key === 'activity' && unread ? { ...t, badge: unread } : t)} />
+    </header>
+  );
+}
+function SubHeader({ title, onBack, right }) {
+  return (
+    <div style={{ position: 'sticky', top: 0, zIndex: 20, margin: '0 -16px', padding: 'calc(var(--safe-top) + 10px) 12px 10px', background: 'rgb(247 248 250 / .92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-default)', display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
+      <button type="button" onClick={onBack} style={{ justifySelf: 'start', background: 'none', border: 0, padding: '6px 4px', cursor: 'pointer', font: '500 15px/1.2 var(--font-sans)', color: 'var(--ink-600)', display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ fontSize: 20, lineHeight: '16px' }}>‹</span> Back</button>
+      <p style={{ margin: 0, font: '600 15px/1.2 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{title}</p>
+      <div style={{ justifySelf: 'end' }}>{right}</div>
+    </div>
+  );
+}
+Object.assign(window, { AppHeader, SubHeader, TABS });

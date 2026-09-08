@@ -1,0 +1,70 @@
+// Count-up numbers, tab crossfade, and an iOS-style screen stack. Motion tokens from tokens/effects.css.
+function useCountUp(target, ms = 600) {
+  const [v, setV] = React.useState(0);
+  const prev = React.useRef(0);
+  React.useEffect(() => {
+    const from = prev.current, to = Number(target) || 0, t0 = performance.now(); let raf, done = false;
+    const finish = () => { if (done) return; done = true; cancelAnimationFrame(raf); prev.current = to; setV(to); };
+    if (document.hidden) { finish(); return; }
+    const tick = t => { const p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 3); setV(from + (to - from) * e); if (p < 1) raf = requestAnimationFrame(tick); else finish(); };
+    raf = requestAnimationFrame(tick);
+    const fallback = setTimeout(finish, ms + 100); // rAF pauses in hidden tabs/iframes
+    document.addEventListener('visibilitychange', finish);
+    return () => { cancelAnimationFrame(raf); clearTimeout(fallback); document.removeEventListener('visibilitychange', finish); };
+  }, [target]);
+  return v;
+}
+/** Renders a number or "$1,240"-style string counting up from its previous value. */
+function CountUp({ value, decimals = 0 }) {
+  const s = String(value); const m = s.match(/^([^0-9-]*)(-?[0-9][0-9,]*\.?[0-9]*)(.*)$/);
+  if (!m) return s;
+  const n = useCountUp(parseFloat(m[2].replace(/,/g, '')));
+  return m[1] + n.toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }) + m[3];
+}
+/** Crossfades children whenever `id` changes. */
+function Fade({ id, children }) {
+  return <div key={id} style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both' }}>{children}</div>;
+}
+/** Screen stack: the top screen slides in from the right; pop slides it back out. Underlying screen dims and parallaxes. */
+function ScreenStack({ screens, popping }) {
+  const top = screens.length - 1;
+  const [settled, setSettled] = React.useState(false);
+  React.useEffect(() => { setSettled(false); const t = setTimeout(() => setSettled(true), 340); return () => clearTimeout(t); }, [screens.length, popping]);
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh' }}>
+      {screens.map((s, i) => {
+        const isTop = i === top, under = i === top - 1;
+        const anim = isTop && i > 0 ? (popping ? 'ink-pop 320ms var(--ease-out) both' : 'ink-push 320ms var(--ease-out) both') : under ? (popping ? 'ink-under-back 320ms var(--ease-out) both' : 'ink-under 320ms var(--ease-out) both') : 'none';
+        return <div key={s.key} aria-hidden={!isTop} style={{ position: isTop ? 'relative' : 'absolute', inset: 0, background: 'var(--surface-page)', animation: anim, willChange: 'transform', pointerEvents: isTop ? 'auto' : 'none', visibility: !isTop && settled && !popping ? 'hidden' : 'visible', minHeight: '100vh', height: isTop ? undefined : '100vh', overflow: isTop ? undefined : 'hidden', zIndex: i }}>{s.node}</div>;
+      })}
+    </div>
+  );
+}
+/** Bottom sheet with scrim; used for the drafted check-in text. */
+function Sheet({ open, onClose, children }) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgb(20 25 32 / .4)', animation: 'ink-fade var(--duration-base) var(--ease-out) both', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 768, background: 'var(--surface-card)', borderRadius: '20px 20px 0 0', padding: '12px 16px calc(var(--safe-bottom) + 20px)', animation: 'ink-sheet 320ms var(--ease-out) both', boxSizing: 'border-box' }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--gray-300)', margin: '0 auto 12px' }} />
+        {children}
+      </div>
+    </div>
+  );
+}
+/** Fixed-size page of a list instead of a long scroll. Renders footer "1–6 of 14 ‹ ›". */
+function usePager(items, size) {
+  const [page, setPage] = React.useState(0);
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  React.useEffect(() => { if (page > pages - 1) setPage(0); }, [items.length]);
+  const slice = items.slice(page * size, page * size + size);
+  const footer = items.length > size ? (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 8px 16px', borderTop: '1px solid var(--border-subtle)', font: '500 12px/1.4 var(--font-sans)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+      <span>{page * size + 1}–{Math.min(items.length, (page + 1) * size)} of {items.length}</span>
+      <span style={{ display: 'flex', gap: 4 }}>
+        {[['‹', -1], ['›', 1]].map(([g, dir]) => { const off = dir < 0 ? page === 0 : page >= pages - 1; return <button key={g} type="button" disabled={off} onClick={() => setPage(p => p + dir)} style={{ width: 32, height: 32, borderRadius: 9999, border: 0, background: off ? 'transparent' : 'var(--gray-100)', color: off ? 'var(--gray-300)' : 'var(--ink-700)', cursor: off ? 'default' : 'pointer', font: '600 18px/1 var(--font-sans)' }}>{g}</button>; })}
+      </span>
+    </div>) : null;
+  return { slice, footer, page, setPage };
+}
+Object.assign(window, { useCountUp, CountUp, Fade, ScreenStack, Sheet, usePager });

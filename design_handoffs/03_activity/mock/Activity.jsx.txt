@@ -1,0 +1,77 @@
+const { SectionHeading, Card, Button, StatusBadge } = window.InkboundDesignSystem_74e23a;
+function CheckinRow({ u, D, onText, onOpen, last }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: last ? 0 : undefined }}>
+      <button type="button" onClick={onOpen} style={{ flex: 1, minWidth: 0, background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+        <p style={{ margin: 0, font: '500 14px/1.5 var(--font-sans)', display: 'flex', alignItems: 'center', gap: 8 }}>{u.name} <StatusBadge status={u.status} /></p>
+        <p style={{ margin: 0, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{u.planLabel} · {u.lastCheckin == null ? 'Never checked in' : 'Last check-in ' + D.ago(u.lastCheckin)}</p>
+      </button>
+      <Button size="sm" variant="money" onClick={onText}>Text</Button>
+    </div>
+  );
+}
+function NotifRow({ n, D, onOpen }) {
+  const u = D.byId[n.userId];
+  return (
+    <button type="button" onClick={onOpen} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', alignItems: 'start', gap: 10, width: '100%', padding: '9px 14px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+      <span style={{ width: 10, height: 10, borderRadius: '50%', background: D.NOTIF_DOT[n.type], marginTop: 5 }} />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', font: '500 13px/1.4 var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title}</span>
+        <span style={{ display: 'block', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[u && u.name, n.sub].filter(Boolean).join(' · ')}</span>
+      </span>
+      <span style={{ font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', marginTop: 2 }}>{D.timeAgo(n.minsAgo)}</span>
+    </button>
+  );
+}
+const NOTIF_GROUPS = { all: null, money: ['paid', 'trial', 'cancel', 'save'], paywall: ['paywall', 'wheel', 'stalled'], coaches: ['reply', 'campaign', 'video', 'call'] };
+function ActivityTab({ D, onOpen, onText, sent }) {
+  const [view, setView] = React.useState('feed');
+  const [kind, setKind] = React.useState('all');
+  const [dayK, setDayK] = React.useState('today');
+  const due = D.checkinsDue().filter(u => !sent[u.id]);
+  const DAY = { today: n => n.minsAgo < 60 * 24, yesterday: n => n.minsAgo >= 60 * 24 && n.minsAgo < 60 * 48, earlier: n => n.minsAgo >= 60 * 48 };
+  const list = D.notifications.filter(n => DAY[dayK](n) && (!NOTIF_GROUPS[kind] || NOTIF_GROUPS[kind].includes(n.type)));
+  const pager = usePager(list, 7);
+  const duePager = usePager(due, 6);
+  const { SegmentedControl } = window.InkboundDesignSystem_74e23a;
+  return (
+    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0,1fr)' }}>
+      <SegmentedControl value={view} onChange={setView} options={[{ key: 'feed', label: 'Feed' }, { key: 'checkins', label: due.length ? 'Check-ins · ' + due.length : 'Check-ins' }]} />
+      <Fade id={view + kind}>
+        {view === 'checkins' && <div>
+          <Card padding="none">
+            {due.length === 0 ? <p style={{ margin: 0, padding: '24px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' }}>Everyone's been checked in on this week.</p> :
+              duePager.slice.map((u, i) => <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><CheckinRow u={u} D={D} onOpen={() => onOpen(u)} onText={() => onText(u)} /></div>)}
+            {duePager.footer}
+          </Card>
+          <p style={{ margin: '8px 0 0', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>Paying and trialing users get a check-in text from Elan once a week. Stops when they churn.</p>
+        </div>}
+        {view === 'feed' && <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><MiniToggle value={dayK} onChange={setDayK} options={[['today', 'Today'], ['yesterday', 'Yesterday'], ['earlier', 'Earlier']]} /><MiniToggle value={kind} onChange={setKind} options={[['all', 'All'], ['money', '$'], ['paywall', 'Paywall'], ['coaches', 'Coaches']]} /></div>
+          <Card padding="none">
+            {pager.slice.length === 0 ? <p style={{ margin: 0, padding: '24px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' }}>Nothing here.</p> :
+              pager.slice.map((n, i) => <div key={n.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><NotifRow n={n} D={D} onOpen={() => onOpen(D.byId[n.userId])} /></div>)}
+            {pager.footer}
+          </Card>
+        </div>}
+      </Fade>
+    </div>
+  );
+}
+function CheckinSheet({ D, user, onClose, onSent }) {
+  const text = user ? D.checkinText(user) : '';
+  return (
+    <Sheet open={!!user} onClose={onClose}>
+      {user && <>
+        <p style={{ margin: 0, font: '600 15px/1.3 var(--font-sans)' }}>Text {user.name.split(' ')[0]}</p>
+        <p style={{ margin: '2px 0 12px', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{user.phone} · variation {(D.CHECKIN_TEXTS.indexOf(text.replace(user.name.split(' ')[0], '{first}')) + 1) || ''} of 6</p>
+        <div style={{ background: 'var(--ink-700)', color: '#fff', borderRadius: '18px 18px 18px 4px', padding: '10px 14px', font: '400 15px/1.45 var(--font-sans)', maxWidth: '85%' }}>{text}</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <Button variant="secondary" block onClick={onClose}>Not now</Button>
+          <Button variant="money" block onClick={() => { onSent(user); onClose(); }}>Open Messages</Button>
+        </div>
+      </>}
+    </Sheet>
+  );
+}
+Object.assign(window, { ActivityTab, CheckinSheet, NotifRow });
