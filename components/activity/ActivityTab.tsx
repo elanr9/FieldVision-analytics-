@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Fade, usePager } from '@/components/motion';
 import { MiniToggle } from '@/components/overview/MiniToggle';
 import { useNav, type NavContextValue } from '@/components/shell/nav';
@@ -9,7 +10,9 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { checkinsDue, lastSentAt, type CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord, NotificationType } from '@/lib/notifications';
 import type { UserRecord } from '@/lib/types';
+import { markCheckinSent } from './actions';
 import { CheckinRow } from './CheckinRow';
+import { CheckinSheet } from './CheckinSheet';
 import { NotifRow, minutesAgo } from './NotifRow';
 
 type View = 'feed' | 'checkins';
@@ -50,7 +53,17 @@ export function ActivityTab({ users, notifications, checkinLog }: ActivityTabPro
   const [kind, setKind] = useState<KindKey>('all');
   const [dayK, setDayK] = useState<DayKey>('today');
   const [now] = useState(() => Date.now());
+  const [texting, setTexting] = useState<UserRecord | null>(null);
+  /** Server log plus sends made this session, so the row disappears and the count drops right away. */
+  const [log, setLog] = useState(checkinLog);
+  useEffect(() => setLog(checkinLog), [checkinLog]);
+  const router = useRouter();
   const nav = useNav() as NavWithOpen;
+
+  const onSent = (user: UserRecord, variation: number) => {
+    setLog(l => [{ user_id: user.id, sent_at: new Date().toISOString(), variation }, ...l]);
+    markCheckinSent(user.id, variation).then(() => router.refresh()).catch(() => {});
+  };
 
   const byId = new Map(users.map(u => [u.id, u]));
   const openProfile = (userId: string) => {
@@ -58,7 +71,7 @@ export function ActivityTab({ users, notifications, checkinLog }: ActivityTabPro
     if (user) nav.open?.(user);
   };
 
-  const due = checkinsDue(users, checkinLog, new Date(now));
+  const due = checkinsDue(users, log, new Date(now));
   const list = notifications.filter(n => DAY[dayK](minutesAgo(n.createdAt, now)) && (!NOTIF_GROUPS[kind] || NOTIF_GROUPS[kind].includes(n.type)));
   const pager = usePager(list, 7);
   const duePager = usePager(due, 6);
@@ -70,7 +83,7 @@ export function ActivityTab({ users, notifications, checkinLog }: ActivityTabPro
         {view === 'checkins' && <div>
           <Card padding="none">
             {due.length === 0 ? <p style={EMPTY_STYLE}>Everyone&apos;s been checked in on this week.</p> :
-              duePager.slice.map((u, i) => <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><CheckinRow u={u} lastCheckin={lastSentAt(u.id, checkinLog)} now={now} onOpen={() => openProfile(u.id)} onText={() => { /* TODO(step 5): open CheckinSheet */ }} /></div>)}
+              duePager.slice.map((u, i) => <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><CheckinRow u={u} lastCheckin={lastSentAt(u.id, log)} now={now} onOpen={() => openProfile(u.id)} onText={() => setTexting(u)} /></div>)}
             {duePager.footer}
           </Card>
           <p style={{ margin: '8px 0 0', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>Paying and trialing users get a check-in text from Elan once a week. Stops when they churn.</p>
@@ -87,6 +100,7 @@ export function ActivityTab({ users, notifications, checkinLog }: ActivityTabPro
           </Card>
         </div>}
       </Fade>
+      <CheckinSheet user={texting} checkinLog={log} onClose={() => setTexting(null)} onSent={onSent} />
     </div>
   );
 }
