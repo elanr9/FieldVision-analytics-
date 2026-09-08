@@ -5,6 +5,7 @@ import { Fade, type Screen } from '@/components/motion';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import type { Funnel, FunnelChapterKey, Paywall } from '@/lib/funnel';
 import type { UserRecord } from '@/lib/types';
+import { GraphView } from './GraphView';
 import { SummaryView } from './SummaryView';
 
 type View = 'summary' | 'funnel' | 'steps' | 'paywall';
@@ -42,6 +43,7 @@ export function OnboardingTab({ funnel }: OnboardingTabProps) {
       <SegmentedControl value={view} onChange={k => setView(k as View)} options={VIEWS} />
       <Fade id={view}>
         {view === 'summary' && <SummaryView funnel={funnel} onStep={goStep} />}
+        {view === 'funnel' && <GraphView funnel={funnel} selectedStep={selectedStep} zoomChapter={zoomChapter} onSelectStep={setSelectedStep} onZoom={setZoomChapter} />}
       </Fade>
     </div>
   );
