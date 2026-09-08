@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { PAYWALL_EVENTS, PAYWALL_SCREENS } from './funnel';
 import { CHAPTER_LABELS, ONBOARDING_STEP_BY_ID, type OnboardingChapter } from './onboarding-steps';
 import type { UserRecord } from './types';
 
@@ -164,6 +165,109 @@ export async function loadEventUsers(
     if (row.user_id) byName.get(row.name)?.add(row.user_id);
   }
   return byName;
+}
+
+interface PaywallEventRow {
+  name: string;
+  user_id: string | null;
+  properties: Record<string, unknown> | null;
+}
+
+interface StalledRow {
+  user_id: string;
+}
+
+const PAYWALL_EVENT_NAMES = ['onboarding_screen_view', 'onboarding_answer', 'retention_offer_accepted'];
+
+/** Maps one raw flow event to the paywall funnel signals it proves. */
+export function derivePaywallKeys(row: PaywallEventRow): string[] {
+  if (row.name === 'retention_offer_accepted') return [PAYWALL_EVENTS.saveOfferAccepted];
+  const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
+  if (!screen) return [];
+  if (row.name === 'onboarding_screen_view') {
+    switch (screen) {
+      case PAYWALL_SCREENS.tryFree: return [PAYWALL_EVENTS.tryFreeViewed];
+      case PAYWALL_SCREENS.paywall: return [PAYWALL_EVENTS.paywallViewed];
+      case PAYWALL_SCREENS.wheel: return [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed];
+      case PAYWALL_SCREENS.offer: return [PAYWALL_EVENTS.offer90Viewed];
+      default: return [];
+    }
+  }
+  if (row.name === 'onboarding_answer') {
+    const plan = typeof row.properties?.plan === 'string' ? row.properties.plan : null;
+    switch (screen) {
+      case PAYWALL_SCREENS.paywall: return plan ? [PAYWALL_EVENTS.tryFreeTapped, PAYWALL_EVENTS.checkoutStarted] : [];
+      case PAYWALL_SCREENS.wheel: return [PAYWALL_EVENTS.wheelSpun];
+      case PAYWALL_SCREENS.offer: return plan ? [PAYWALL_EVENTS.offerTrialStarted, PAYWALL_EVENTS.checkoutStarted] : [];
+      default: return [];
+    }
+  }
+  return [];
+}
+
+function addKeys(byKey: Map<string, Set<string>>, keys: string[], userId: string | null) {
+  if (!userId) return;
+  for (const key of keys) {
+    let set = byKey.get(key);
+    if (!set) {
+      set = new Set();
+      byKey.set(key, set);
+    }
+    set.add(userId);
+  }
+}
+
+/** Distinct users per paywall signal in range, derived from flow events and the stalled feed rows. */
+export async function loadPaywallKeyUsers(fromIso: string, toIso: string): Promise<Map<string, Set<string>>> {
+  const supabase = adminClient();
+  const [events, stalled] = await Promise.all([
+    fetchAllPages<PaywallEventRow>((from, to) =>
+      supabase
+        .from('product_events')
+        .select('name, user_id, properties')
+        .in('name', PAYWALL_EVENT_NAMES)
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages<StalledRow>((from, to) =>
+      supabase
+        .from('analytics_notifications')
+        .select('user_id')
+        .eq('type', 'stalled')
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: true })
+        .range(from, to),
+    ),
+  ]);
+  const byKey = new Map<string, Set<string>>();
+  for (const row of events) addKeys(byKey, derivePaywallKeys(row), row.user_id);
+  for (const row of stalled) addKeys(byKey, [PAYWALL_EVENTS.paywallIdle10m], row.user_id);
+  return byKey;
+}
+
+/** Which paywall signals have ever been produced, so a zero in range differs from a signal that does not exist yet. */
+export async function loadSeenPaywallKeys(): Promise<Set<string>> {
+  const supabase = adminClient();
+  const [events, stalled] = await Promise.all([
+    supabase
+      .from('product_events')
+      .select('name, user_id, properties')
+      .in('name', PAYWALL_EVENT_NAMES)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+    supabase.from('analytics_notifications').select('user_id').eq('type', 'stalled').limit(1),
+  ]);
+  if (events.error) throw events.error;
+  if (stalled.error) throw stalled.error;
+  const seen = new Set<string>();
+  for (const row of (events.data ?? []) as PaywallEventRow[]) {
+    for (const key of derivePaywallKeys(row)) seen.add(key);
+  }
+  if ((stalled.data ?? []).length > 0) seen.add(PAYWALL_EVENTS.paywallIdle10m);
+  return seen;
 }
 
 /** Which of the given event names the athlete app has ever emitted. Lets a zero in range differ from an event that does not exist yet. */

@@ -3,23 +3,37 @@ import type { StepView } from './onboarding-analytics';
 import type { PlanInterval, UserRecord } from './types';
 
 /**
- * product_events names the paywall funnel looks for. Checked against the athlete app on 2026-09-08:
- * none of these are emitted yet, so every event-backed paywall metric renders "—" until handoff 5 adds them.
+ * Paywall funnel signals. These are derived keys, not raw product_events names: the athlete app's
+ * onboarding flow emits `onboarding_screen_view` / `onboarding_answer` with a `screen` property
+ * (s36_try_free, s37_paywall, s37c_spin_wheel, s38_one_time_offer) and the retention offer edge
+ * function emits `retention_offer_accepted`. See derivePaywallKeys in lib/onboarding-analytics.ts.
  */
 export const PAYWALL_EVENTS = {
-  paywallViewed: 'paywall_viewed', // TODO(handoff-5): emit paywall_viewed
-  tryFreeTapped: 'try_free_tapped', // TODO(handoff-5): emit try_free_tapped
-  paywallClosed: 'paywall_closed', // TODO(handoff-5): emit paywall_closed
-  checkoutStarted: 'checkout_started', // TODO(handoff-5): emit checkout_started
-  wheelViewed: 'wheel_viewed', // TODO(handoff-5): emit wheel_viewed
-  wheelSpun: 'wheel_spun', // TODO(handoff-5): emit wheel_spun
-  offer90Viewed: 'offer_90_viewed', // TODO(handoff-5): emit offer_90_viewed
-  offerTrialStarted: 'offer_trial_started', // TODO(handoff-5): emit offer_trial_started
-  offerPaid: 'offer_paid', // TODO(handoff-5): emit offer_paid
-  paywallIdle10m: 'paywall_idle_10m', // TODO(handoff-5): emit paywall_idle_10m
-  saveOfferShown: 'save_offer_shown', // TODO(handoff-5): emit save_offer_shown
-  saveOfferAccepted: 'save_offer_accepted', // TODO(handoff-5): emit save_offer_accepted
+  tryFreeViewed: 'try_free_viewed', // screen view s36_try_free
+  paywallViewed: 'paywall_viewed', // screen view s37_paywall
+  tryFreeTapped: 'try_free_tapped', // answer on s37_paywall with a plan (trial started right away)
+  paywallClosed: 'paywall_closed', // left s37_paywall for the wheel (same people as wheel_viewed)
+  checkoutStarted: 'checkout_started', // any plan answer on s37_paywall or s38_one_time_offer
+  wheelViewed: 'wheel_viewed', // screen view s37c_spin_wheel
+  wheelSpun: 'wheel_spun', // answer on s37c_spin_wheel
+  offer90Viewed: 'offer_90_viewed', // screen view s38_one_time_offer
+  offerTrialStarted: 'offer_trial_started', // answer on s38_one_time_offer
+  offerPaid: 'offer_paid', // paying user on the inkbound_offer plan (from users, not events)
+  paywallIdle10m: 'paywall_idle_10m', // analytics_notifications type stalled
+  saveOfferShown: 'save_offer_shown', // churned in range or accepted the free month (no shown event exists)
+  saveOfferAccepted: 'save_offer_accepted', // retention_offer_accepted
 } as const;
+
+/** Screen ids from the athlete app's onboarding flow (inkbound-web and inkbound-mobile src/flow). */
+export const PAYWALL_SCREENS = {
+  tryFree: 's36_try_free',
+  paywall: 's37_paywall',
+  wheel: 's37c_spin_wheel',
+  offer: 's38_one_time_offer',
+} as const;
+
+/** Stripe payment_type of the one time offer plan. */
+export const OFFER_PAYMENT_TYPE = 'inkbound_offer';
 
 export type FunnelChapterKey = OnboardingChapter | 'paywall';
 
@@ -56,7 +70,8 @@ export interface Funnel {
 }
 
 export interface PaywallPlan {
-  key: PlanInterval;
+  /** Stripe payment_type, e.g. inkbound_semester. */
+  key: string;
   label: string;
   trials: number;
   paid: number;
@@ -105,19 +120,20 @@ export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = {
 
 export const STARTED_STEP_ID = 'survey_intro';
 
-/** The five paywall steps that follow the survey. Only account_created and subscribed have a source today. */
+/** The five paywall steps that follow the survey. account_created and subscribed come from users, the rest from flow events. */
 const PAYWALL_STEPS: { id: string; label: string; event: string | null }[] = [
   { id: 'account_created', label: 'Account created', event: null },
-  { id: 'try_free', label: 'Try free', event: PAYWALL_EVENTS.tryFreeTapped },
+  { id: 'try_free', label: 'Try free', event: PAYWALL_EVENTS.tryFreeViewed },
   { id: 'paywall', label: 'Paywall', event: PAYWALL_EVENTS.paywallViewed },
   { id: 'checkout', label: 'Checkout', event: PAYWALL_EVENTS.checkoutStarted },
   { id: 'subscribed', label: 'Subscribed', event: null },
 ];
 
-const PLAN_LABELS: Record<Exclude<PlanInterval, 'unknown'>, string> = {
-  monthly: 'Monthly',
-  annual: 'Annual',
-  lifetime: 'Lifetime',
+/** Inkbound plans shown in "Trial → paid by plan", keyed by Stripe payment_type. Prices from the live product. */
+export const PLAN_LABELS: Record<string, string> = {
+  inkbound_semester: '$120 semester',
+  inkbound_offer: '$60 semester',
+  inkbound_monthly: '$40 monthly',
 };
 
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {
@@ -265,10 +281,18 @@ export function buildPaywall(input: BuildPaywallInput): Paywall {
     return users ? [...users].filter(id => allowed.has(id)).length : null;
   };
   // Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have paid.
-  const plans = (Object.keys(PLAN_LABELS) as Exclude<PlanInterval, 'unknown'>[]).map(key => {
-    const trials = included.filter(u => u.interval === key && isWithin(u.trialStartedAt, input.range));
+  const plans = Object.keys(PLAN_LABELS).map(key => {
+    const trials = included.filter(u => u.paymentType === key && isWithin(u.trialStartedAt, input.range));
     return { key, label: PLAN_LABELS[key], trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
   });
+  // Paid after the offer comes from subscriptions, not flow events.
+  const offerPaid = input.eventUsers.has(PAYWALL_EVENTS.offer90Viewed)
+    ? included.filter(u => u.paymentType === OFFER_PAYMENT_TYPE && u.status === 'paying' && isWithin(u.paidAt, input.range)).length
+    : null;
+  // Nobody records "save offer shown"; the closest real denominator is everyone who reached the cancel flow:
+  // churned in range plus those who took the free month instead.
+  const accepted = count(PAYWALL_EVENTS.saveOfferAccepted);
+  const churned = included.filter(u => u.status === 'churned' && isWithin(u.paidAt, input.range)).length;
   return {
     seen: count(PAYWALL_EVENTS.paywallViewed),
     trialDirect: count(PAYWALL_EVENTS.tryFreeTapped),
@@ -278,11 +302,11 @@ export function buildPaywall(input: BuildPaywallInput): Paywall {
       spun: count(PAYWALL_EVENTS.wheelSpun),
       offer90: count(PAYWALL_EVENTS.offer90Viewed),
       trial: count(PAYWALL_EVENTS.offerTrialStarted),
-      paid: count(PAYWALL_EVENTS.offerPaid),
+      paid: offerPaid,
     },
     stalled10m: count(PAYWALL_EVENTS.paywallIdle10m),
     plans,
-    save: { shown: count(PAYWALL_EVENTS.saveOfferShown), accepted: count(PAYWALL_EVENTS.saveOfferAccepted) },
+    save: { shown: accepted === null ? null : accepted + churned, accepted },
   };
 }
 
@@ -299,18 +323,16 @@ async function loadDeps() {
   return { ONBOARDING_STEPS: steps.ONBOARDING_STEPS, ...analytics, loadUsers: queries.loadUsers };
 }
 
-const ALL_PAYWALL_EVENTS = Object.values(PAYWALL_EVENTS);
-
-/** Distinct users per paywall event that the app has ever emitted; never-seen events are left out so they render as "—". */
+/** Distinct users per paywall signal that the app has ever emitted; never-seen signals are left out so they render as "—". */
 async function loadPaywallEventUsers(
   deps: Awaited<ReturnType<typeof loadDeps>>,
   range: DateRange,
 ): Promise<Map<string, Set<string>>> {
-  const [seen, byName] = await Promise.all([
-    deps.loadSeenEventNames(ALL_PAYWALL_EVENTS),
-    deps.loadEventUsers(ALL_PAYWALL_EVENTS, range.from.toISOString(), range.to.toISOString()),
+  const [seen, byKey] = await Promise.all([
+    deps.loadSeenPaywallKeys(),
+    deps.loadPaywallKeyUsers(range.from.toISOString(), range.to.toISOString()),
   ]);
-  return new Map([...byName].filter(([name]) => seen.has(name)));
+  return new Map([...byKey].filter(([key]) => seen.has(key)));
 }
 
 export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funnel> {

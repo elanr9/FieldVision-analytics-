@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { PlanInterval, UserRecord } from './types';
+import type { UserRecord } from './types';
 import type { StepView } from './onboarding-analytics';
 import type { FunnelStep } from './funnel';
 // @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
 import { ONBOARDING_STEPS } from './onboarding-steps.ts';
 // @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
 import { buildFunnel, buildPaywall, PAYWALL_EVENTS } from './funnel.ts';
+// @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
+import { derivePaywallKeys } from './onboarding-analytics.ts';
 
 const NOW = new Date('2026-09-08T12:00:00');
 const range = { from: new Date('2026-08-09T12:00:00'), to: NOW };
@@ -17,7 +19,7 @@ interface UserOpts {
   signupDate?: string;
   trialStartedAt?: string | null;
   paidAt?: string | null;
-  interval?: PlanInterval;
+  paymentType?: string | null;
   excludedFromMetrics?: boolean;
   isParent?: boolean;
   onboarding?: UserRecord['onboarding'];
@@ -38,9 +40,9 @@ function user(id: string, opts: UserOpts = {}): UserRecord {
     trialStartedAt: opts.trialStartedAt ?? null,
     trialEndsAt: null,
     paidAt: opts.paidAt ?? null,
-    paymentType: null,
+    paymentType: opts.paymentType ?? null,
     status: 'signed_up',
-    interval: opts.interval ?? 'unknown',
+    interval: 'unknown',
     isParent: opts.isParent ?? false,
     excludedFromMetrics: opts.excludedFromMetrics ?? false,
     onboarding: opts.onboarding ?? 'in_progress',
@@ -65,14 +67,14 @@ function walk(userId: string, lastStepId: string): StepView[] {
 }
 
 const users: UserRecord[] = [
-  user('u1', { trialStartedAt: IN_RANGE, paidAt: IN_RANGE, interval: 'annual' }),
-  user('u2', { trialStartedAt: IN_RANGE, interval: 'monthly' }),
+  user('u1', { trialStartedAt: IN_RANGE, paidAt: IN_RANGE, paymentType: 'inkbound_semester' }),
+  user('u2', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
   user('u3', { signupDate: BEFORE_RANGE }),
   user('u4', { signupDate: BEFORE_RANGE }),
   user('u5', { signupDate: BEFORE_RANGE }),
   // Paid in range without a trial in range: counts nowhere in the plan split.
-  user('u6', { signupDate: BEFORE_RANGE, paidAt: IN_RANGE, interval: 'monthly' }),
-  user('admin', { excludedFromMetrics: true, paidAt: IN_RANGE, trialStartedAt: IN_RANGE, interval: 'annual' }),
+  user('u6', { signupDate: BEFORE_RANGE, paidAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
+  user('admin', { excludedFromMetrics: true, paidAt: IN_RANGE, trialStartedAt: IN_RANGE, paymentType: 'inkbound_semester' }),
   user('mom', { isParent: true }),
 ];
 
@@ -86,7 +88,10 @@ const views: StepView[] = [
   ...walk('mom', 'parent_invite_email'),
 ];
 
-const eventUsers = new Map<string, Set<string>>([[PAYWALL_EVENTS.tryFreeTapped, new Set(['u1', 'u2', 'admin'])]]);
+const eventUsers = new Map<string, Set<string>>([
+  [PAYWALL_EVENTS.tryFreeViewed, new Set(['u1', 'u2', 'admin'])],
+  [PAYWALL_EVENTS.tryFreeTapped, new Set(['u1', 'u2', 'admin'])],
+]);
 
 const funnel = buildFunnel({ defs: ONBOARDING_STEPS, views, users, eventUsers, range });
 const by = (id: string): FunnelStep => {
@@ -150,8 +155,23 @@ test('paywall shares: nulls for missing events, plan split follows the trial coh
   assert.equal(paywall.stalled10m, null);
   assert.deepEqual(paywall.save, { shown: null, accepted: null });
   assert.deepEqual(paywall.plans, [
-    { key: 'monthly', label: 'Monthly', trials: 1, paid: 0 },
-    { key: 'annual', label: 'Annual', trials: 1, paid: 1 },
-    { key: 'lifetime', label: 'Lifetime', trials: 0, paid: 0 },
+    { key: 'inkbound_semester', label: '$120 semester', trials: 1, paid: 1 },
+    { key: 'inkbound_offer', label: '$60 semester', trials: 0, paid: 0 },
+    { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
   ]);
+});
+
+test('derivePaywallKeys maps flow screen views and answers to funnel signals', () => {
+  const view = (screen: string) => ({ name: 'onboarding_screen_view', user_id: 'u1', properties: { screen } });
+  const answer = (screen: string, extra: Record<string, unknown> = {}) => ({ name: 'onboarding_answer', user_id: 'u1', properties: { screen, ...extra } });
+  assert.deepEqual(derivePaywallKeys(view('s36_try_free')), [PAYWALL_EVENTS.tryFreeViewed]);
+  assert.deepEqual(derivePaywallKeys(view('s37_paywall')), [PAYWALL_EVENTS.paywallViewed]);
+  assert.deepEqual(derivePaywallKeys(view('s37c_spin_wheel')), [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed]);
+  assert.deepEqual(derivePaywallKeys(view('s38_one_time_offer')), [PAYWALL_EVENTS.offer90Viewed]);
+  assert.deepEqual(derivePaywallKeys(answer('s37_paywall', { plan: 'semester' })), [PAYWALL_EVENTS.tryFreeTapped, PAYWALL_EVENTS.checkoutStarted]);
+  assert.deepEqual(derivePaywallKeys(answer('s37_paywall')), []);
+  assert.deepEqual(derivePaywallKeys(answer('s37c_spin_wheel', { spin: 1 })), [PAYWALL_EVENTS.wheelSpun]);
+  assert.deepEqual(derivePaywallKeys(answer('s38_one_time_offer', { plan: 'offer' })), [PAYWALL_EVENTS.offerTrialStarted, PAYWALL_EVENTS.checkoutStarted]);
+  assert.deepEqual(derivePaywallKeys({ name: 'retention_offer_accepted', user_id: 'u1', properties: {} }), [PAYWALL_EVENTS.saveOfferAccepted]);
+  assert.deepEqual(derivePaywallKeys(view('s01_welcome')), []);
 });
