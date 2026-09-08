@@ -2,18 +2,20 @@
 
 import { useMemo, useState, type CSSProperties } from 'react';
 import { CountUp, Fade, usePager } from '@/components/motion';
+import { Mini } from '@/components/overview/Mini';
 import { MiniToggle } from '@/components/overview/MiniToggle';
 import { useDossier } from '@/components/profile/useDossier';
 import { SubHeader } from '@/components/shell/SubHeader';
 import { useNav } from '@/components/shell/nav';
 import { Card } from '@/components/ui/Card';
 import { ContactActions } from '@/components/ui/ContactActions';
+import { SectionHeading } from '@/components/ui/SectionHeading';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatBlock } from '@/components/ui/StatBlock';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Tag } from '@/components/ui/Tag';
-import { buildProfile, formatAgo, formatShortDay, type BackgroundChapterKey, type ProfileReply, type ProfileVideo } from '@/lib/profile';
+import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileReply, type ProfileVideo } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 
 export interface ProfileScreenProps { user: UserRecord }
@@ -57,15 +59,67 @@ function ReplyRow({ reply, first, onOpen }: { reply: ProfileReply; first: boolea
   );
 }
 
+/** The athlete who invited this parent: parent_invites.player_user_id maps to the athlete's parentEmail. */
+function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null {
+  const email = parent.email.toLowerCase();
+  if (!email) return null;
+  return users.find(u => !u.isParent && u.parentEmail?.toLowerCase() === email) ?? null;
+}
+
 export function ProfileScreen({ user }: ProfileScreenProps) {
-  const { pop } = useNav();
-  const { dossier, loading } = useDossier(user.id);
+  const { pop, open, users } = useNav();
+  const athlete = user.isParent ? findAthlete(user, users) : null;
+  const { dossier, loading } = useDossier(user.isParent ? athlete?.id ?? null : user.id);
   const profile = useMemo(() => buildProfile(user, dossier), [user, dossier]);
   const [sec, setSec] = useState<Section>('background');
   const [chap, setChap] = useState<BackgroundChapterKey>('basic');
   const videos = usePager(profile.videos, 3);
   const replies = usePager(profile.replies, 3);
   const chapter = profile.background.find(c => c.key === chap) ?? profile.background[0];
+
+  if (user.isParent) {
+    // TODO(handoff-3): read auth last_sign_in_at. UserRecord has no session data, so any onboarding activity stands in for "opened the app".
+    const active = user.onboarding !== 'none';
+    return (
+      <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px 64px', fontFamily: 'var(--font-sans)' }}>
+        <SubHeader title={user.name} onBack={pop} />
+        <div style={{ paddingTop: 20 }}>
+          <h2 style={{ margin: 0, font: '700 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em' }}>{user.name}</h2>
+          <p style={{ margin: '4px 0 0', font: '400 14px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{[user.email || 'No email', user.phone].filter(Boolean).join(' · ')}</p>
+          <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+            <Tag kind="soft">Parent</Tag>
+            <span style={{ borderRadius: 9999, padding: '2px 8px', font: '600 11px/1.5 var(--font-sans)', background: active ? 'var(--green-100)' : 'var(--gray-100)', color: active ? 'var(--green-800)' : 'var(--text-secondary)' }}>{active ? 'Opened the app' : 'Never opened the app'}</span>
+          </div>
+          <Card padding="wide" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Fact label="Joined" value={formatShortDay(user.signupDate)} />
+            <Fact label="Invited by" value={athlete ? athlete.name.split(' ')[0] + ' · onboarding' : '—'} />
+          </Card>
+          <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" /></div>
+          <SectionHeading style={{ marginTop: 28 }}>Their athlete</SectionHeading>
+          {athlete ? (
+            <Card interactive padding="wide" onClick={() => open(athlete)} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, font: '700 16px/1.3 var(--font-sans)' }}>{athlete.name}</p>
+                <p style={{ margin: '2px 0 0', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{buildFacts(athlete) || 'No team on file'}</p>
+                <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <StatusBadge status={athlete.status} />
+                  {(athlete.status === 'paying' || athlete.status === 'trialing') && <span style={{ font: '400 12px var(--font-sans)', color: 'var(--text-secondary)' }}>{planLabel(athlete.paymentType, athlete.interval)}</span>}
+                </div>
+              </div>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 22, lineHeight: 1 }}>›</span>
+            </Card>
+          ) : <p style={EMPTY_TEXT}>No athlete linked.</p>}
+          {athlete && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8, marginTop: 8 }}>
+              <Mini label="Emails" value={profile.stats.emails} sub="to coaches" />
+              <Mini label="Replies" value={profile.stats.replies} sub="from coaches" />
+              <Mini label="Videos" value={profile.videos.length} sub="made" />
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px 64px', fontFamily: 'var(--font-sans)' }}>
