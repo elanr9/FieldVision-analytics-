@@ -60,7 +60,7 @@ export default function Dashboard({
   );
 
   return (
-    <NavContext.Provider value={{ push, pop }}>
+    <NavContext.Provider value={{ push, pop, users }}>
       <ScreenStack screens={[{ key: 'root', node: root }, ...stack]} popping={popping} />
     </NavContext.Provider>
   );

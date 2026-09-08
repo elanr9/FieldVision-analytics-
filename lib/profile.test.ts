@@ -217,6 +217,7 @@ test('other statuses', () => {
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'in_progress', onboardingStepId: 'gpa' }), null, NOW).planFact, ['No plan', 'In onboarding · gpa']);
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'completed' }), null, NOW).planFact, ['No plan', 'Stopped at paywall']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'lifetime_499', interval: 'lifetime' }), null, NOW).planFact, ['$499 lifetime', 'No renewal']);
+  assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'yearly_240_trial', interval: 'annual', paidAt: '2026-08-05T10:00:00' }), null, NOW).planFact, ['$240 annual', 'Next charge Aug 5, 2027']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'inkbound_semester', interval: 'unknown', paidAt: '2026-09-01T10:00:00' }), null, NOW).planFact, ['Semester', 'Paid Sep 1']);
   assert.equal(planLabel('monthly_499', 'lifetime'), '$499 lifetime');
 });

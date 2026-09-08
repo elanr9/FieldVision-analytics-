@@ -52,9 +52,11 @@ export interface ThreadMessage {
 const MISSING = '—';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** "Sep 10" */
-export function formatShortDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+/** "Sep 10", or "Sep 10, 2027" when the date falls outside the current year */
+export function formatShortDay(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const year = d.getFullYear() === now.getFullYear() ? undefined : 'numeric';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
 }
 
 function calendarDaysBetween(from: Date, to: Date): number {
@@ -107,13 +109,13 @@ export function planLabel(paymentType: string | null, interval: PlanInterval): s
 function nextChargeLine(user: UserRecord, now: Date): string {
   if (user.interval === 'lifetime') return 'No renewal';
   if (!user.paidAt) return MISSING;
-  if (user.interval === 'unknown') return `Paid ${formatShortDay(user.paidAt)}`;
+  if (user.interval === 'unknown') return `Paid ${formatShortDay(user.paidAt, now)}`;
   const next = new Date(user.paidAt);
   while (next.getTime() <= now.getTime()) {
     if (user.interval === 'monthly') next.setMonth(next.getMonth() + 1);
     else next.setFullYear(next.getFullYear() + 1);
   }
-  return `Next charge ${formatShortDay(next.toISOString())}`;
+  return `Next charge ${formatShortDay(next.toISOString(), now)}`;
 }
 
 export function buildPlanFact(user: UserRecord, now: Date): [string, string] {
@@ -123,7 +125,7 @@ export function buildPlanFact(user: UserRecord, now: Date): [string, string] {
       return [
         `${label} · trial`,
         user.trialEndsAt
-          ? `Trial ends ${formatShortDay(user.trialEndsAt)} · ${formatUntil(user.trialEndsAt, now)}`
+          ? `Trial ends ${formatShortDay(user.trialEndsAt, now)} · ${formatUntil(user.trialEndsAt, now)}`
           : 'Trial ends soon',
       ];
     case 'paying':
