@@ -1,0 +1,18 @@
+const { Input, Button } = window.InkboundDesignSystem_74e23a;
+function LoginScreen({ onEnter }) {
+  const [pw, setPw] = React.useState('');
+  const [pending, setPending] = React.useState(false);
+  const submit = e => { e.preventDefault(); setPending(true); setTimeout(onEnter, 500); };
+  return (
+    <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', fontFamily: 'var(--font-sans)', animation: 'ink-fade 300ms var(--ease-out) both' }}>
+      <form onSubmit={submit} style={{ width: '100%', maxWidth: 384, boxSizing: 'border-box', textAlign: 'center' }}>
+        <img src="../assets/inkbound-mark-flat.png" alt="" style={{ width: 64, height: 64 }} />
+        <h1 style={{ margin: '12px 0 0', font: '700 22px/1.3 var(--font-sans)', letterSpacing: '-0.01em' }}>Inkbound Analytics</h1>
+        <p style={{ margin: '4px 0 0', font: '400 14px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>Enter the dashboard password.</p>
+        <Input type="password" placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} autoFocus style={{ marginTop: 20, padding: '11px 14px', fontSize: 16, textAlign: 'center' }} />
+        <Button block disabled={pending} onClick={submit} style={{ marginTop: 10, width: '100%', padding: '12px 16px' }}>{pending ? 'Checking…' : 'Enter'}</Button>
+      </form>
+    </main>
+  );
+}
+Object.assign(window, { LoginScreen });

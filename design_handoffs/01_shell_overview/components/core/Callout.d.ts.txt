@@ -1,0 +1,10 @@
+export interface CalloutProps {
+  /** info = ink tint; warning = amber; error = red; neutral = page-gray note */
+  tone?: 'info' | 'warning' | 'error' | 'neutral';
+  /** uppercase 10px label, e.g. "The rundown" */
+  eyebrow?: string;
+  title?: string;
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+export function Callout(props: CalloutProps): JSX.Element;

@@ -1,0 +1,11 @@
+export interface InputProps {
+  type?: 'text' | 'search' | 'password' | 'date' | 'email';
+  value?: string;
+  placeholder?: string;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  autoFocus?: boolean;
+  required?: boolean;
+  name?: string;
+  style?: React.CSSProperties;
+}
+export function Input(props: InputProps): JSX.Element;

@@ -1,0 +1,14 @@
+import React from 'react';
+import { UserRow } from './UserRow.jsx';
+/** Bordered card of UserRows with a "Title · count" header and hairline dividers. */
+export function UserList({ title, users, onOpen, emptyLabel = 'No one in this group.', style }) {
+  return (
+    <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-card)', overflow: 'hidden', fontFamily: 'var(--font-sans)', ...style }}>
+      {title && <p style={{ margin: 0, padding: '10px 16px', borderBottom: '1px solid var(--border-default)', font: '600 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{title} · {users.length}</p>}
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+        {users.map((u, i) => <div key={u.id || i} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><UserRow user={u} onOpen={() => onOpen && onOpen(u)} /></div>)}
+        {users.length === 0 && <li style={{ padding: '32px 16px', textAlign: 'center', font: '400 14px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{emptyLabel}</li>}
+      </ul>
+    </div>
+  );
+}

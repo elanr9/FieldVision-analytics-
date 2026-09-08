@@ -1,0 +1,10 @@
+/**
+ * @startingPoint section="Components" subtitle="Pill tab strip with badge" viewport="700x120"
+ */
+export interface TabsProps {
+  tabs: { key: string; label: string; /** green count pill (follow-ups) */ badge?: number }[];
+  value: string;
+  onChange?: (key: string) => void;
+  style?: React.CSSProperties;
+}
+export function Tabs(props: TabsProps): JSX.Element;

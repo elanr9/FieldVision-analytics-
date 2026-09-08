@@ -1,0 +1,2 @@
+export interface FilterChipsProps { options: { key: string; label: string }[]; value: string; onChange?: (key: string) => void; style?: React.CSSProperties; }
+export function FilterChips(props: FilterChipsProps): JSX.Element;

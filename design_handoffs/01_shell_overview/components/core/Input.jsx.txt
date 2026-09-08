@@ -1,0 +1,9 @@
+import React, { useState } from 'react';
+/** Text / search / password / date field. 12px radius, gray-300 border, ink focus ring. */
+export function Input({ style, onFocus, onBlur, ...rest }) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <input {...rest} onFocus={e => { setFocus(true); onFocus && onFocus(e); }} onBlur={e => { setFocus(false); onBlur && onBlur(e); }}
+      style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface-card)', border: `1px solid ${focus ? 'var(--focus-border)' : 'var(--border-input)'}`, boxShadow: focus ? '0 0 0 2px var(--focus-ring)' : 'none', borderRadius: 'var(--radius-lg)', padding: '8px 12px', font: '400 14px/24px var(--font-sans)', color: 'var(--text-primary)', outline: 'none', transition: 'border-color var(--duration-fast), box-shadow var(--duration-fast)', ...style }} />
+  );
+}

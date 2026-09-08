@@ -1,0 +1,2 @@
+export interface StatBlockProps { label: string; value: string | number; }
+export function StatBlock(props: StatBlockProps): JSX.Element;

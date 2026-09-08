@@ -1,0 +1,10 @@
+import React from 'react';
+/** Uppercase eyebrow above each section: "Revenue · Last 30 days". Optional right-aligned count. */
+export function SectionHeading({ children, count, style }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8, ...style }}>
+      <h2 style={{ margin: 0, font: 'var(--type-section)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)', color: 'var(--text-secondary)' }}>{children}</h2>
+      {typeof count === 'number' && <span style={{ font: '600 11px/1 var(--font-sans)', color: 'var(--text-tertiary)' }}>{count}</span>}
+    </div>
+  );
+}

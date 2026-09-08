@@ -1,0 +1,18 @@
+/**
+ * @startingPoint section="Components" subtitle="Metric tile with eyebrow, number, sub" viewport="700x200"
+ */
+export interface StatCardProps {
+  /** uppercase eyebrow, e.g. "Trial started" or "Gross · Last 30 days" */
+  label: string;
+  value: string | number;
+  /** small gray line, e.g. "42.9% of signups" */
+  sub?: string;
+  /** green number — money and paying only */
+  accent?: boolean;
+  /** ink border when this tile drives the people list */
+  selected?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  onClick?: () => void;
+  style?: React.CSSProperties;
+}
+export function StatCard(props: StatCardProps): JSX.Element;

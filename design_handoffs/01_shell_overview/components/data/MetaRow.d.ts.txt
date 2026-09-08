@@ -1,0 +1,2 @@
+export interface MetaRowProps { label: string; value?: string | number | null; dense?: boolean; }
+export function MetaRow(props: MetaRowProps): JSX.Element;

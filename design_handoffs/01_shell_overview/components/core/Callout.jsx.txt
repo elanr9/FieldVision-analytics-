@@ -1,0 +1,17 @@
+import React from 'react';
+/** Tinted note box. tone: info (ink-50) | warning (amber) | error (red) | neutral (gray-50). */
+export function Callout({ tone = 'info', eyebrow, title, children, style }) {
+  const t = {
+    info: { bg: 'var(--ink-50)', border: 'var(--ink-100)', eye: 'var(--ink-600)', title: 'var(--text-primary)', body: 'var(--gray-800)' },
+    warning: { bg: 'var(--amber-100)', border: 'var(--amber-200)', eye: 'var(--amber-800)', title: 'var(--text-primary)', body: 'var(--amber-800)' },
+    error: { bg: 'var(--red-100)', border: 'var(--red-200)', eye: 'var(--red-800)', title: 'var(--red-800)', body: 'var(--red-800)' },
+    neutral: { bg: 'var(--surface-page)', border: 'transparent', eye: 'var(--text-secondary)', title: 'var(--text-primary)', body: 'var(--text-secondary)' },
+  }[tone];
+  return (
+    <div style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 'var(--radius-lg)', padding: 12, fontFamily: 'var(--font-sans)', ...style }}>
+      {eyebrow && <p style={{ margin: 0, font: '700 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wider)', color: t.eye }}>{eyebrow}</p>}
+      {title && <p style={{ margin: eyebrow ? '4px 0 0' : 0, font: '600 14px/20px var(--font-sans)', color: t.title }}>{title}</p>}
+      {children && <div style={{ marginTop: eyebrow || title ? 4 : 0, font: '400 14px/1.625 var(--font-sans)', color: t.body }}>{children}</div>}
+    </div>
+  );
+}

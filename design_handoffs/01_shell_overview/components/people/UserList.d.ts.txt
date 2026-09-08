@@ -1,0 +1,5 @@
+/**
+ * @startingPoint section="Components" subtitle="Titled people list with rows" viewport="700x260"
+ */
+export interface UserListProps { title?: string; users: any[]; onOpen?: (user: any) => void; emptyLabel?: string; style?: React.CSSProperties; }
+export function UserList(props: UserListProps): JSX.Element;

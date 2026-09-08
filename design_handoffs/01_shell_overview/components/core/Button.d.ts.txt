@@ -1,0 +1,17 @@
+/**
+ * @startingPoint section="Components" subtitle="Ink primary, green money, gray secondary" viewport="700x180"
+ */
+export interface ButtonProps {
+  /** primary = ink navy; money = green (outreach "Text"); secondary = gray; ghost = transparent */
+  variant?: 'primary' | 'money' | 'secondary' | 'ghost';
+  /** lg = 12px radius, 14px text (forms, profile actions); sm = 8px radius, 12px text (row actions) */
+  size?: 'sm' | 'lg';
+  disabled?: boolean;
+  /** stretch to fill (flex:1 / width:100%) */
+  block?: boolean;
+  href?: string;
+  onClick?: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}
+export function Button(props: ButtonProps): JSX.Element;

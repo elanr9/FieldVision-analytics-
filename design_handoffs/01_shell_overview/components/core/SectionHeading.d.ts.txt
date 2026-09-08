@@ -1,0 +1,7 @@
+export interface SectionHeadingProps {
+  children: React.ReactNode;
+  /** right-aligned count, e.g. number of rows below */
+  count?: number;
+  style?: React.CSSProperties;
+}
+export function SectionHeading(props: SectionHeadingProps): JSX.Element;

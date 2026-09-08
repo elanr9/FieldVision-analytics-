@@ -1,0 +1,28 @@
+import React, { useState } from 'react';
+import { StatusBadge } from './StatusBadge.jsx';
+import { Tag } from './Tag.jsx';
+import { ContactActions } from './ContactActions.jsx';
+/** One person in a list: name + team, email · phone, status badge + joined date, and contact actions. */
+export function UserRow({ user, note, onOpen, showActions = true, showStatus = true }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <li onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{ display: 'flex', alignItems: 'center', listStyle: 'none', background: hover ? 'var(--surface-page)' : 'transparent', fontFamily: 'var(--font-sans)' }}>
+      <button type="button" onClick={onOpen} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', textAlign: 'left', background: 'none', border: 0, cursor: 'pointer', color: 'var(--text-primary)', fontFamily: 'inherit' }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, font: '500 14px/1.5 var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {user.name}
+            {user.team && <span style={{ marginLeft: 6, font: '400 12px/1 var(--font-sans)', color: 'var(--text-tertiary)' }}>{user.team}</span>}
+            {user.isParent && <Tag kind="text">PARENT</Tag>}
+            {user.excludedFromMetrics && <Tag />}
+          </p>
+          <p style={{ margin: 0, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note || (user.email + (user.phone ? ' · ' + user.phone : ''))}</p>
+        </div>
+        {showStatus && <div style={{ display: 'flex', flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <StatusBadge status={user.status} interval={user.interval} />
+          {user.joined && <span style={{ font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>Joined {user.joined}</span>}
+        </div>}
+      </button>
+      {showActions && <div style={{ flexShrink: 0, paddingRight: 16 }}><ContactActions phone={user.phone} email={user.email} /></div>}
+    </li>
+  );
+}

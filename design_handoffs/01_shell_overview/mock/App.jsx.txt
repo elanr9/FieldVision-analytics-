@@ -1,0 +1,46 @@
+const NavCtx = React.createContext({});
+window.NavCtx = NavCtx;
+function InkboundApp() {
+  const D = window.INK_DATA;
+  const [authed, setAuthed] = React.useState(location.hash !== '#login');
+  const [tab, setTab] = React.useState('overview');
+  const [range, setRange] = React.useState('30d');
+  const [stack, setStack] = React.useState([]);
+  const [popping, setPopping] = React.useState(false);
+  const [textUser, setTextUser] = React.useState(null);
+  const [sent, setSent] = React.useState({});
+  const real = D.users.filter(u => !u.excludedFromMetrics && !u.junk && !u.isParent);
+  const days = range === '7d' ? 7 : range === '30d' ? 30 : 9999;
+  const cohort = real.filter(u => u.signupDaysAgo < days);
+  const paying = real.filter(u => u.status === 'paying'), trialing = real.filter(u => u.status === 'trialing');
+  const mrr = paying.reduce((s, u) => s + D.PLANS[u.plan].monthly, 0);
+  const push = s => { setPopping(false); setStack(st => [...st, { ...s, key: s.key + '-' + Date.now() }]); window.scrollTo(0, 0); };
+  const pop = () => { setPopping(true); setTimeout(() => { setStack(st => st.slice(0, -1)); setPopping(false); }, 300); };
+  const open = u => push({ key: 'profile-' + u.id, node: <ProfileScreen D={D} user={u} sent={sent} /> });
+  const nav = React.useMemo(() => ({ push, pop, open, text: setTextUser }), [sent]);
+  const everyone = D.users.filter(u => !u.excludedFromMetrics);
+  const stats = [{ key: 'users', label: 'Users', value: everyone.length, title: 'All accounts', users: everyone }, { key: 'paying', label: 'Paying', value: D.totals.payingNow, accent: true, title: 'Paying', users: paying }, { key: 'mrr', label: 'MRR', value: D.usd(D.totals.mrr), title: 'Paying', users: paying }, { key: 'trialing', label: 'Trialing', value: D.totals.trialingNow, title: 'Trialing', users: trialing }];
+  const unread = D.notifications.filter(n => n.minsAgo < 60 * 24).length;
+  if (!authed) return <LoginScreen onEnter={() => setAuthed(true)} />;
+  const root = (
+    <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px calc(var(--safe-bottom) + 64px)', fontFamily: 'var(--font-sans)' }}>
+      <AppHeader stats={stats} onStat={s => push({ key: 'people-' + s.key, node: <PeopleScreen title={s.title} users={s.users} /> })} tab={tab} onTab={setTab} unread={unread} />
+      <div style={{ paddingTop: 16 }}>
+        <Fade id={tab}>
+          {tab === 'overview' && <OverviewTab D={D} real={real} push={push} />}
+          {tab === 'activity' && <ActivityTab D={D} onOpen={open} onText={setTextUser} sent={sent} />}
+          {tab === 'onboarding' && <OnboardingTab D={D} real={real} range={range} onRange={setRange} push={push} />}
+          {tab === 'users' && <UsersTab D={D} onOpen={open} />}
+          {tab === 'calendar' && <CalendarTab D={D} real={real} onOpen={open} />}
+        </Fade>
+      </div>
+    </main>
+  );
+  return (
+    <NavCtx.Provider value={nav}>
+      <ScreenStack screens={[{ key: 'root', node: root }, ...stack]} popping={popping} />
+      <CheckinSheet D={D} user={textUser} onClose={() => setTextUser(null)} onSent={u => { u.checkinsSent = (u.checkinsSent || 0) + 1; setSent(s => ({ ...s, [u.id]: true })); }} />
+    </NavCtx.Provider>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<InkboundApp />);

@@ -1,0 +1,11 @@
+import React from 'react';
+/** Label-left / value-right fact row inside a bordered list (Team, Position, Grad year…). Renders nothing when value is empty. */
+export function MetaRow({ label, value, dense }) {
+  if (value === null || value === undefined || value === '') return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: dense ? 12 : 16, padding: dense ? '6px 0' : '8px 0', borderTop: '1px solid var(--border-subtle)', fontFamily: 'var(--font-sans)' }}>
+      <span style={{ font: `${dense ? 400 : 500} 12px/1.5 var(--font-sans)`, color: 'var(--text-secondary)' }}>{label}</span>
+      <span style={{ font: '500 14px/1.5 var(--font-sans)', color: 'var(--text-primary)', textAlign: 'right', maxWidth: '60%' }}>{value}</span>
+    </div>
+  );
+}

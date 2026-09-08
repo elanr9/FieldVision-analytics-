@@ -1,0 +1,8 @@
+export interface HeaderStatProps {
+  label: string;
+  value: string | number;
+  accent?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+}
+export function HeaderStat(props: HeaderStatProps): JSX.Element;

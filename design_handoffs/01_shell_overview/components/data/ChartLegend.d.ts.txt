@@ -1,0 +1,2 @@
+export interface ChartLegendProps { items: { label: string; color: string }[]; style?: React.CSSProperties; }
+export function ChartLegend(props: ChartLegendProps): JSX.Element;

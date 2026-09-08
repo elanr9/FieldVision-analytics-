@@ -1,0 +1,5 @@
+export interface StatusBadgeProps {
+  status: 'paying' | 'comped' | 'trialing' | 'trial_ended' | 'signed_up' | 'churned';
+  interval?: 'monthly' | 'annual' | 'lifetime' | 'unknown';
+}
+export function StatusBadge(props: StatusBadgeProps): JSX.Element;

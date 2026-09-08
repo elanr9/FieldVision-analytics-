@@ -1,0 +1,12 @@
+import React, { useState } from 'react';
+/** Wrapping row of small pill filters; active = ink fill. options: [{key,label}]. */
+export function FilterChips({ options, value, onChange, style }) {
+  const [hover, setHover] = useState(null);
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, ...style }}>
+      {options.map(o => { const on = o.key === value; return (
+        <button key={o.key} type="button" onClick={() => onChange && onChange(o.key)} onMouseEnter={() => setHover(o.key)} onMouseLeave={() => setHover(null)}
+          style={{ border: 0, borderRadius: 'var(--radius-full)', padding: '6px 12px', cursor: 'pointer', font: '600 12px/1.4 var(--font-sans)', background: on ? 'var(--action-primary)' : hover === o.key ? 'var(--action-secondary-hover)' : 'var(--action-secondary)', color: on ? 'var(--text-inverse)' : 'var(--gray-600)', transition: 'background-color var(--duration-fast) var(--ease-out)' }}>{o.label}</button>); })}
+    </div>
+  );
+}

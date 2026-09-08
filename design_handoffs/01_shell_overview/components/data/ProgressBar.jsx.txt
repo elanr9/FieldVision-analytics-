@@ -1,0 +1,11 @@
+import React from 'react';
+/** 6px track with a coloured fill; used for drop-off bars. tone: dropoff (amber) | ink | money. */
+export function ProgressBar({ value, max = 100, tone = 'dropoff', style }) {
+  const pct = max ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const fill = { dropoff: 'var(--chart-dropoff)', ink: 'var(--ink-700)', money: 'var(--green-600)' }[tone];
+  return (
+    <div style={{ height: 6, borderRadius: 'var(--radius-full)', background: 'var(--surface-track)', overflow: 'hidden', ...style }}>
+      <div style={{ height: '100%', width: pct + '%', borderRadius: 'var(--radius-full)', background: fill, transition: 'width var(--duration-base) var(--ease-out)' }} />
+    </div>
+  );
+}
