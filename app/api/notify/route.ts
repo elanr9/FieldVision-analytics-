@@ -1,78 +1,266 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { sendPushToAll } from '../../../lib/apns';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { sendPushToAll } from '@/lib/apns';
+import {
+  buildNotificationCopy,
+  pronounFromSport,
+  recordEvent,
+  type NotificationType,
+  type NotificationVars,
+  type Pronoun,
+} from '@/lib/notifications';
 
-interface ProfileRecord {
-  user_id?: string;
-  full_name?: string | null;
-  email?: string | null;
-  notification_email?: string | null;
-}
-
-interface SubscriptionRecord {
-  user_id?: string;
-  plan?: string | null;
-  payment_type?: string | null;
-  amount_cents?: number | null;
-  paid_at?: string | null;
-}
-
-interface FounderCallRecord {
-  user_id?: string;
-  scheduled_at?: string | null;
-}
-
-type EventRecord = ProfileRecord & SubscriptionRecord & FounderCallRecord;
+type Json = string | number | boolean | null | undefined;
+type Row = Record<string, Json>;
 
 interface WebhookPayload {
   table: string;
   op: 'INSERT' | 'UPDATE';
-  record: EventRecord;
-  old_record: EventRecord | null;
+  record: Row;
+  old_record: Row | null;
 }
 
-function dollars(cents: number | null | undefined): string {
-  if (!cents) return '';
-  return ` $${(cents / 100).toFixed(2).replace(/\.00$/, '')}`;
+/** One founder-facing event resolved from a database change. */
+interface FounderEvent {
+  type: NotificationType;
+  userId: string;
+  vars: NotificationVars;
+  /** Skip when the same type was recorded for this user within this many minutes. */
+  dedupeMinutes?: number;
 }
 
-/** "Tue, Sep 9 at 4:30 PM ET" for a stored ISO timestamp. */
-function callTime(iso: string | null | undefined): string {
-  if (!iso) return 'an unknown time';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'an unknown time';
-  const day = date.toLocaleDateString('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-  const time = date.toLocaleTimeString('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  return `${day} at ${time} ET`;
-}
+const PAYWALL_SCREENS = new Set(['s37_paywall', 's37c_spin_wheel', 's38_one_time_offer']);
 
-async function lookupName(userId: string | undefined): Promise<string> {
-  if (!userId) return 'A user';
+/** Plan label per Stripe payment_type. Prices from the live Inkbound product. */
+const PLAN_LABELS: Record<string, string> = {
+  inkbound_semester: '$120 semester',
+  inkbound_offer: '$60 semester',
+  inkbound_monthly: '$40 monthly',
+  inkbound_quarterly: '$60 quarterly',
+  inkbound_weekly: '$10 weekly',
+  monthly_29_99: '$30 monthly',
+  yearly_240_trial: '$240 yearly',
+  lifetime_499: '$499 lifetime',
+};
+
+function admin(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return 'A user';
-  const supabase = createClient(url, key, { auth: { persistSession: false } });
+  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+function str(value: Json): string | null {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s.length ? s : null;
+}
+
+function num(value: Json): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function planLabel(paymentType: Json): string | null {
+  const key = str(paymentType);
+  if (!key) return null;
+  return PLAN_LABELS[key] ?? key.replace(/^inkbound_/, '').replace(/_/g, ' ');
+}
+
+/** "Thu 4:30pm" in Eastern time. */
+function callSlot(iso: Json): string | null {
+  const s = str(iso);
+  if (!s) return null;
+  const date = new Date(s);
+  if (Number.isNaN(date.getTime())) return null;
+  const day = date.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+  const time = date
+    .toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })
+    .replace(' ', '')
+    .toLowerCase();
+  return `${day} ${time}`;
+}
+
+function daysBetween(fromIso: string | null, to: Date): number {
+  if (!fromIso) return 0;
+  const from = new Date(fromIso);
+  if (Number.isNaN(from.getTime())) return 0;
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86_400_000));
+}
+
+/** "Joe Calabrese" -> "Coach Calabrese". */
+function coachLabel(coachName: Json): string | null {
+  const name = str(coachName);
+  if (!name) return null;
+  const parts = name.split(/\s+/);
+  return `Coach ${parts[parts.length - 1]}`;
+}
+
+async function onboardingFinishedDaysAgo(supabase: SupabaseClient, userId: string): Promise<number> {
+  const [intake, profile] = await Promise.all([
+    supabase.from('user_onboarding_intake').select('completed, updated_at').eq('user_id', userId).maybeSingle(),
+    supabase.from('user_profiles').select('created_at').eq('user_id', userId).maybeSingle(),
+  ]);
+  const intakeRow = intake.data as { completed: boolean | null; updated_at: string | null } | null;
+  const profileRow = profile.data as { created_at: string | null } | null;
+  const finishedAt = intakeRow?.completed ? intakeRow.updated_at : profileRow?.created_at ?? null;
+  return daysBetween(finishedAt, new Date());
+}
+
+function subscriptionEvent(op: WebhookPayload['op'], record: Row, old: Row | null): FounderEvent | null {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  const plan = str(record.plan);
+  const amount = num(record.amount_cents) ?? 0;
+  const label = planLabel(record.payment_type);
+
+  if (plan === 'full') {
+    const amountChanged = op === 'INSERT' || num(old?.amount_cents) !== num(record.amount_cents);
+    const paidAtChanged = op === 'INSERT' || str(old?.paid_at) !== str(record.paid_at);
+    if (amount > 0 && (amountChanged || paidAtChanged)) {
+      return { type: 'paid', userId, vars: { amountCents: amount, plan: label }, dedupeMinutes: 10 };
+    }
+    const becameFull = op === 'INSERT' || str(old?.plan) !== 'full' || str(old?.payment_type) !== str(record.payment_type);
+    if (amount <= 0 && becameFull) {
+      return { type: 'trial', userId, vars: { plan: label }, dedupeMinutes: 60 * 24 };
+    }
+    return null;
+  }
+
+  if (plan === 'free' && str(record.payment_type) === 'canceled' && str(old?.plan) === 'full') {
+    return { type: 'cancel', userId, vars: { plan: planLabel(old?.payment_type) }, dedupeMinutes: 60 };
+  }
+  return null;
+}
+
+async function productEvent(supabase: SupabaseClient, record: Row): Promise<FounderEvent | null> {
+  const userId = str(record.user_id);
+  const name = str(record.name);
+  if (!userId || !name) return null;
+
+  if (name === 'retention_offer_accepted') {
+    return { type: 'save', userId, vars: {}, dedupeMinutes: 60 };
+  }
+  if (name !== 'onboarding_screen_view') return null;
+
+  const properties = (record.properties ?? null) as unknown;
+  const screen = properties && typeof properties === 'object' ? str((properties as Row).screen) : null;
+  if (!screen || !PAYWALL_SCREENS.has(screen)) return null;
+
+  if (screen === 's37_paywall') {
+    const n = await onboardingFinishedDaysAgo(supabase, userId);
+    return { type: 'paywall', userId, vars: { n }, dedupeMinutes: 30 };
+  }
+  return { type: 'wheel', userId, vars: {}, dedupeMinutes: 30 };
+}
+
+async function replyEvent(supabase: SupabaseClient, record: Row): Promise<FounderEvent | null> {
+  const sentEmailId = str(record.sent_email_id);
+  if (!sentEmailId) return null;
   const { data } = await supabase
-    .from('user_profiles')
-    .select('full_name, email')
-    .eq('user_id', userId)
+    .from('user_sent_emails')
+    .select('user_id, school_id, coach_name')
+    .eq('id', sentEmailId)
     .maybeSingle();
-  return data?.full_name ?? data?.email ?? 'A user';
+  const sent = data as { user_id: string | null; school_id: string | null; coach_name: string | null } | null;
+  if (!sent?.user_id) return null;
+
+  let school: string | null = null;
+  if (sent.school_id) {
+    const { data: schoolRow } = await supabase.from('schools').select('name').eq('school_id', sent.school_id).maybeSingle();
+    school = (schoolRow as { name: string | null } | null)?.name ?? null;
+  }
+  return { type: 'reply', userId: sent.user_id, vars: { school, coach: coachLabel(sent.coach_name) } };
+}
+
+function campaignEvent(record: Row): FounderEvent | null {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  const schools = num(record.schools_count);
+  const coaches = num(record.emails_sent) ?? schools;
+  return { type: 'campaign', userId, vars: { n: coaches, m: schools } };
+}
+
+function videoEvent(record: Row): FounderEvent | null {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  return { type: 'video', userId, vars: { videoTitle: str(record.title) ?? str(record.name) }, dedupeMinutes: 10 };
+}
+
+function callEvent(record: Row): FounderEvent | null {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  return { type: 'call', userId, vars: { slot: callSlot(record.scheduled_at) } };
+}
+
+function stalledEvent(record: Row): FounderEvent | null {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  return { type: 'stalled', userId, vars: {} };
+}
+
+async function resolveEvent(supabase: SupabaseClient, payload: WebhookPayload): Promise<FounderEvent | null> {
+  const { table, op, record, old_record: old } = payload;
+  switch (table) {
+    case 'user_subscriptions':
+      return subscriptionEvent(op, record, old);
+    case 'product_events':
+      return productEvent(supabase, record);
+    case 'paywall_stalls':
+      return stalledEvent(record);
+    case 'email_replies':
+      return replyEvent(supabase, record);
+    case 'outreach_lists':
+      return campaignEvent(record);
+    case 'projects':
+      return videoEvent(record);
+    case 'founder_calls':
+      return callEvent(record);
+    default:
+      return null;
+  }
+}
+
+async function userContext(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ fullName: string | null; pronoun: Pronoun; isDemo: boolean }> {
+  const [profile, intake] = await Promise.all([
+    supabase.from('user_profiles').select('full_name, is_demo, is_admin').eq('user_id', userId).maybeSingle(),
+    supabase.from('user_onboarding_intake').select('sport').eq('user_id', userId).maybeSingle(),
+  ]);
+  const row = profile.data as { full_name: string | null; is_demo: boolean | null; is_admin: boolean | null } | null;
+  const sport = (intake.data as { sport: string | null } | null)?.sport ?? null;
+  return {
+    fullName: row?.full_name ?? null,
+    pronoun: pronounFromSport(sport),
+    isDemo: Boolean(row?.is_demo || row?.is_admin),
+  };
+}
+
+async function recordedRecently(
+  supabase: SupabaseClient,
+  type: NotificationType,
+  userId: string,
+  minutes: number,
+): Promise<boolean> {
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+  const { data } = await supabase
+    .from('analytics_notifications')
+    .select('id')
+    .eq('type', type)
+    .eq('user_id', userId)
+    .gte('created_at', since)
+    .limit(1);
+  return Boolean(data && data.length > 0);
 }
 
 /**
- * Receives database events from Supabase triggers and turns them into
- * push notifications. Exempt from the cookie middleware; authenticated by
- * a shared secret header set inside the trigger function.
+ * Receives database events from Supabase triggers (and the paywall stall cron)
+ * and turns them into founder push notifications plus Activity feed rows.
+ * Exempt from the cookie middleware; authenticated by a shared secret header
+ * set inside the trigger function.
  */
 export async function POST(request: NextRequest) {
   const secret = process.env.NOTIFY_SECRET;
@@ -81,72 +269,36 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = (await request.json()) as WebhookPayload;
-  const { table, op, record, old_record: oldRecord } = payload;
+  const supabase = admin();
 
-  let title = '';
-  let body = '';
-  let userId = record.user_id ?? '';
-  let eventType = '';
-
-  if (table === 'user_profiles' && op === 'INSERT') {
-    const name = record.full_name ?? 'Someone';
-    const email = record.email ?? record.notification_email ?? '';
-    title = 'New signup';
-    body = email ? `${name} (${email}) just created an account` : `${name} just created an account`;
-    userId = record.user_id ?? '';
-    eventType = 'signup';
-  } else if (table === 'user_profiles' && op === 'UPDATE') {
-    const name = record.full_name ?? 'Someone';
-    title = 'Trial started';
-    body = `${name} just started their 7 day trial`;
-    userId = record.user_id ?? '';
-    eventType = 'trial';
-  } else if (table === 'founder_calls' && op === 'INSERT') {
-    const name = await lookupName(record.user_id);
-    title = 'Call booked';
-    body = `${name} booked a call with you for ${callTime(record.scheduled_at)}`;
-    eventType = 'call';
-  } else if (table === 'user_subscriptions') {
-    // Trial checkouts write plan=full + paid_at with amount_cents=0.
-    // Those are not payments — trial_started_at already covers the alert.
-    if ((record.amount_cents ?? 0) <= 0) {
-      return NextResponse.json({ ok: true, skipped: true, reason: 'no_charge' });
-    }
-
-    const name = await lookupName(record.user_id);
-    const plan = record.plan ?? 'unknown plan';
-    const paidChanged =
-      op === 'INSERT'
-        ? Boolean(record.paid_at)
-        : record.paid_at !== oldRecord?.paid_at && Boolean(record.paid_at);
-
-    if (paidChanged) {
-      title = 'New payment';
-      body = `${name} paid${dollars(record.amount_cents)} on the ${plan} plan`;
-      eventType = 'payment';
-    } else if (op === 'INSERT') {
-      title = 'New subscription';
-      body = `${name} is now on the ${plan} plan`;
-      eventType = 'subscription';
-    } else if (record.plan !== oldRecord?.plan) {
-      title = 'Plan changed';
-      body = `${name} moved from ${oldRecord?.plan ?? 'unknown'} to ${plan}`;
-      eventType = 'plan_change';
-    } else {
-      return NextResponse.json({ ok: true, skipped: true, reason: 'no_meaningful_change' });
-    }
-  } else {
-    return NextResponse.json({ ok: true, skipped: true, reason: 'unhandled_event' });
+  const event = await resolveEvent(supabase, payload);
+  if (!event) {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'not_a_founder_event' });
   }
 
-  const data: Record<string, string> = { eventType };
-  if (userId) data.userId = userId;
+  const { fullName, pronoun, isDemo } = await userContext(supabase, event.userId);
+  if (isDemo) {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'internal_user' });
+  }
+  if (event.dedupeMinutes && (await recordedRecently(supabase, event.type, event.userId, event.dedupeMinutes))) {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'duplicate' });
+  }
+
+  const first = fullName?.trim().split(/\s+/)[0] || null;
+  const vars: NotificationVars = { ...event.vars, first, pronoun };
+  const copy = buildNotificationCopy(event.type, vars);
 
   try {
-    await sendPushToAll(title, body, data);
+    await recordEvent(event.type, event.userId, vars);
+  } catch (err) {
+    console.error('Feed insert failed', err);
+  }
+
+  try {
+    await sendPushToAll(copy.title, copy.sub ?? fullName ?? '', { eventType: event.type, userId: event.userId });
   } catch (err) {
     console.error('Push send failed', err);
     return NextResponse.json({ error: 'Push send failed' }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, type: event.type });
 }

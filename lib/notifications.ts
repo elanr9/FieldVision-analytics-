@@ -4,18 +4,19 @@ import { createClient } from '@supabase/supabase-js';
  * Product events shown in the Activity feed. Each row in analytics_notifications
  * carries the exact catalogue title/sub so the feed never has to rebuild copy.
  *
- * Who should call recordEvent for each type:
- *   trial     app/api/notify/route.ts, user_subscriptions insert without paid_at
- *   paid      app/api/notify/route.ts, user_subscriptions insert with paid_at
- *   cancel    app/api/notify/route.ts, user_subscriptions update to cancelled
- *   call      app/api/notify/route.ts, founder_calls insert
- *   paywall   TODO(handoff-4): athlete app paywall view event (onboarding completed, no subscription)
- *   wheel     TODO(handoff-4): athlete app 90% off screen view event
- *   stalled   TODO(handoff-4): athlete app paywall with 10 min of no action
- *   save      TODO(handoff-4): Stripe cancellation flow, free month accepted
- *   reply     TODO(handoff-4): coach reply received on the athlete's outreach inbox
- *   campaign  TODO(handoff-4): outreach campaign sent
- *   video     TODO(handoff-4): highlight video created
+ * Every type is recorded by app/api/notify/route.ts, fed by the database
+ * triggers in supabase/migrations/20260908230000_analytics_notify_triggers.sql:
+ *   trial     user_subscriptions becomes plan=full with no charge
+ *   paid      user_subscriptions plan=full with amount_cents > 0
+ *   cancel    user_subscriptions plan=full -> free/canceled
+ *   call      founder_calls insert
+ *   paywall   product_events onboarding_screen_view s37_paywall
+ *   wheel     product_events onboarding_screen_view s37c_spin_wheel or s38_one_time_offer
+ *   stalled   pg_cron analytics_check_paywall_stalls(), paywall view with 10 min of nothing after it
+ *   save      product_events retention_offer_accepted (retention-offer edge function)
+ *   reply     email_replies insert with kind=reply
+ *   campaign  outreach_lists sent_at set
+ *   video     projects status -> downloadable
  */
 export type NotificationType =
   | 'paywall'
