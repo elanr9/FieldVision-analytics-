@@ -28,7 +28,7 @@ function toRowUser(u: UserRecord): UserRowProps['user'] {
 }
 
 export function PeopleScreen({ title, users }: PeopleScreenProps) {
-  const { pop } = useNav();
+  const { pop, open } = useNav();
   const sorted = [...users].sort((a, b) => b.signupDate.localeCompare(a.signupDate));
   const pager = usePager(sorted, 7);
   return (
@@ -38,7 +38,7 @@ export function PeopleScreen({ title, users }: PeopleScreenProps) {
         <p style={{ margin: 0, padding: '10px 16px', borderBottom: '1px solid var(--border-default)', font: '600 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{title.split(' · ')[0]} · {users.length}</p>
         {pager.slice.map((u, i) => (
           <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}>
-            <UserRow user={toRowUser(u)} showActions={false} onOpen={() => { /* TODO(handoff-2): open ProfileScreen */ }} />
+            <UserRow user={toRowUser(u)} showActions={false} onOpen={() => open(u)} />
           </div>
         ))}
         {!users.length && <p style={{ margin: 0, padding: '32px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' }}>No one in this group.</p>}
