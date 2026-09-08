@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
 import { OverviewTab } from '@/components/overview/OverviewTab';
+import { PeopleScreen } from '@/components/people/PeopleScreen';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
 import { buildOverview } from '@/lib/overview';
@@ -45,9 +46,7 @@ export default function Dashboard({
     }, 300);
   };
 
-  const onStat = (_stat: HeaderStatItem) => {
-    // TODO(handoff-1 step 7): push PeopleScreen
-  };
+  const onStat = (s: HeaderStatItem) => push({ key: 'people-' + s.key, node: <PeopleScreen title={s.title} users={s.users} /> });
 
   const root = (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px calc(var(--safe-bottom) + 64px)', fontFamily: 'var(--font-sans)' }}>
