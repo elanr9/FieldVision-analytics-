@@ -1,0 +1,10 @@
+:root{
+/* Radii — exact from the product */
+--radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-full:9999px;
+--radius-card:var(--radius-xl);--radius-inner:var(--radius-lg);--radius-control:var(--radius-md);--radius-pill:var(--radius-full);
+/* Shadows — near-flat system; borders carry hierarchy */
+--shadow-sm:0 1px 2px 0 rgb(20 25 32 / 0.05);--shadow-tooltip:0 4px 12px rgb(20 25 32 / 0.08);
+/* Motion */
+--ease-out:cubic-bezier(0.2,0,0,1);/* @kind other */--duration-fast:150ms;/* @kind other */--duration-base:200ms;/* @kind other */
+--press-scale:0.98;/* @kind other */--press-scale-sm:0.95;/* @kind other */--disabled-opacity:0.6;/* @kind other */--muted-opacity:0.8;/* @kind other */
+}
