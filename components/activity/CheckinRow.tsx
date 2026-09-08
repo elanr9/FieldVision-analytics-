@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { PLAN_LABEL } from '@/lib/checkins';
+import { planLabel } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 import { timeAgo, minutesAgo } from './NotifRow';
 
@@ -20,7 +20,7 @@ export function CheckinRow({ u, lastCheckin, now, onText, onOpen }: CheckinRowPr
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
       <button type="button" onClick={onOpen} style={{ flex: 1, minWidth: 0, background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
         <p style={{ margin: 0, font: '500 14px/1.5 var(--font-sans)', display: 'flex', alignItems: 'center', gap: 8 }}>{u.name} <StatusBadge status={u.status} /></p>
-        <p style={{ margin: 0, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{PLAN_LABEL[u.interval]} · {lastCheckin === null ? 'Never checked in' : 'Last check-in ' + timeAgo(minutesAgo(lastCheckin, now))}</p>
+        <p style={{ margin: 0, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{planLabel(u.paymentType, u.interval)} · {lastCheckin === null ? 'Never checked in' : 'Last check-in ' + timeAgo(minutesAgo(lastCheckin, now))}</p>
       </button>
       <Button size="sm" variant="money" onClick={onText}>Text</Button>
     </div>

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { PlanInterval, UserRecord } from './types';
+import type { UserRecord } from './types';
 
 /** Row from checkin_log. */
 export interface CheckinLogRow {
@@ -19,13 +19,6 @@ export const CHECKIN_TEXTS: readonly string[] = [
 ];
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-export const PLAN_LABEL: Record<PlanInterval, string> = {
-  monthly: 'Monthly',
-  annual: 'Annual',
-  lifetime: 'Lifetime',
-  unknown: 'Plan unknown',
-};
 
 function adminClient() {
   const url = process.env.SUPABASE_URL;

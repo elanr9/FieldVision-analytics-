@@ -43,7 +43,7 @@ interface CapacitorGlobal {
 }
 
 export function openUserFromPush(userId: string) {
-  window.location.assign(`/users/${userId}`);
+  window.location.assign(`/?user=${encodeURIComponent(userId)}`);
 }
 
 interface Banner {

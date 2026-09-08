@@ -93,9 +93,17 @@ function gradShort(gradYear: number | null): string | null {
  * Human plan name. The amount only lives inside Stripe's payment_type slug
  * (monthly_29_99, yearly_240_trial, lifetime_499), so it is parsed from there.
  */
+/** Live Inkbound prices per Stripe payment_type. */
+const INKBOUND_PLAN_LABELS: Record<string, string> = {
+  inkbound_semester: '$120 semester',
+  inkbound_offer: '$60 semester',
+  inkbound_monthly: '$40 monthly',
+  inkbound_quarterly: '$60 quarterly',
+  inkbound_weekly: '$10 weekly',
+};
+
 export function planLabel(paymentType: string | null, interval: PlanInterval): string {
-  if (paymentType === 'inkbound_semester') return 'Semester';
-  if (paymentType === 'inkbound_quarterly') return 'Quarterly';
+  if (paymentType && INKBOUND_PLAN_LABELS[paymentType]) return INKBOUND_PLAN_LABELS[paymentType];
   const priced = paymentType?.match(/^(?:monthly|yearly|lifetime)_(\d+)(?:_(\d{1,2}))?/);
   if (priced) {
     const dollars = Math.round(Number(priced[1]) + (priced[2] ? Number(`0.${priced[2]}`) : 0));
@@ -260,7 +268,7 @@ export function buildBackground(user: UserRecord, bg: DossierBackground | null, 
   ];
 }
 
-export function buildProfile(user: UserRecord, dossier: UserDossier | null, now: Date = new Date()): Profile {
+export function buildProfile(user: UserRecord, dossier: UserDossier | null, now: Date = new Date(), lastCheckinAt: string | null = null): Profile {
   const sentAtById = new Map((dossier?.recentEmails ?? []).map(e => [e.id, e.sentAt]));
   const checkinEligible = (user.status === 'paying' || user.status === 'trialing') && Boolean(user.phone);
   return {
@@ -268,8 +276,7 @@ export function buildProfile(user: UserRecord, dossier: UserDossier | null, now:
     planFact: buildPlanFact(user, now),
     facts: buildFacts(user),
     checkinEligible,
-    // TODO(handoff-3): read checkin_log
-    lastCheckin: 'never',
+    lastCheckin: lastCheckinAt ? formatAgo(lastCheckinAt, now) : 'never',
     stats: {
       emails: dossier?.stats.emailsSent ?? 0,
       replies: dossier?.stats.replies ?? 0,

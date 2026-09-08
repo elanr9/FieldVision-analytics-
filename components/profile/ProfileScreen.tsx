@@ -5,6 +5,7 @@ import { CountUp, Fade, usePager } from '@/components/motion';
 import { Mini } from '@/components/overview/Mini';
 import { MiniToggle } from '@/components/overview/MiniToggle';
 import { ConversationScreen } from '@/components/profile/ConversationScreen';
+import { CheckinSheet } from '@/components/activity/CheckinSheet';
 import { useDossier } from '@/components/profile/useDossier';
 import { SubHeader } from '@/components/shell/SubHeader';
 import { useNav } from '@/components/shell/nav';
@@ -16,6 +17,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { StatBlock } from '@/components/ui/StatBlock';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Tag } from '@/components/ui/Tag';
+import { lastSentAt } from '@/lib/checkins';
 import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileReply, type ProfileVideo } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 
@@ -68,10 +70,12 @@ function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null
 }
 
 export function ProfileScreen({ user }: ProfileScreenProps) {
-  const { push, pop, open, users } = useNav();
+  const { push, pop, open, users, checkinLog, onCheckinSent } = useNav();
   const athlete = user.isParent ? findAthlete(user, users) : null;
   const { dossier, loading } = useDossier(user.isParent ? athlete?.id ?? null : user.id);
-  const profile = useMemo(() => buildProfile(user, dossier), [user, dossier]);
+  const lastCheckinAt = lastSentAt(user.id, checkinLog);
+  const profile = useMemo(() => buildProfile(user, dossier, new Date(), lastCheckinAt), [user, dossier, lastCheckinAt]);
+  const [texting, setTexting] = useState(false);
   const [sec, setSec] = useState<Section>('background');
   const [chap, setChap] = useState<BackgroundChapterKey>('basic');
   const videos = usePager(profile.videos, 3);
@@ -138,7 +142,8 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
           {profile.facts && <Fact label="Team · position · grad" value={profile.facts} />}
           {profile.checkinEligible && <Fact label="Last check-in" value={profile.lastCheckin} />}
         </Card>
-        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" /></div>
+        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" onText={profile.checkinEligible ? () => setTexting(true) : undefined} /></div>
+        <CheckinSheet user={texting ? user : null} checkinLog={checkinLog} onClose={() => setTexting(false)} onSent={onCheckinSent} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 10 }}>
           <StatBlock label="Emails" value={<CountUp value={profile.stats.emails} />} />
           <StatBlock label="Replies" value={<CountUp value={profile.stats.replies} />} />

@@ -1,16 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { Fade, usePager } from '@/components/motion';
 import { MiniToggle } from '@/components/overview/MiniToggle';
-import { useNav, type NavContextValue } from '@/components/shell/nav';
+import { useNav } from '@/components/shell/nav';
 import { Card } from '@/components/ui/Card';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { checkinsDue, lastSentAt, type CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord, NotificationType } from '@/lib/notifications';
 import type { UserRecord } from '@/lib/types';
-import { markCheckinSent } from './actions';
 import { CheckinRow } from './CheckinRow';
 import { CheckinSheet } from './CheckinSheet';
 import { NotifRow, minutesAgo } from './NotifRow';
@@ -37,38 +35,27 @@ export function countToday(notifications: NotificationRecord[], now: number = Da
   return notifications.filter(n => DAY.today(minutesAgo(n.createdAt, now))).length;
 }
 
-/** Profile push lands in handoff 2 as `open` on the nav context; until then this is a no-op. */
-type NavWithOpen = NavContextValue & { open?: (user: UserRecord) => void };
-
 const EMPTY_STYLE = { margin: 0, padding: '24px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' } as const;
 
 export interface ActivityTabProps {
   users: UserRecord[];
   notifications: NotificationRecord[];
   checkinLog: CheckinLogRow[];
+  onSent: (user: UserRecord, variation: number) => void;
 }
 
-export function ActivityTab({ users, notifications, checkinLog }: ActivityTabProps) {
+export function ActivityTab({ users, notifications, checkinLog: log, onSent }: ActivityTabProps) {
   const [view, setView] = useState<View>('feed');
   const [kind, setKind] = useState<KindKey>('all');
   const [dayK, setDayK] = useState<DayKey>('today');
   const [now] = useState(() => Date.now());
   const [texting, setTexting] = useState<UserRecord | null>(null);
-  /** Server log plus sends made this session, so the row disappears and the count drops right away. */
-  const [log, setLog] = useState(checkinLog);
-  useEffect(() => setLog(checkinLog), [checkinLog]);
-  const router = useRouter();
-  const nav = useNav() as NavWithOpen;
-
-  const onSent = (user: UserRecord, variation: number) => {
-    setLog(l => [{ user_id: user.id, sent_at: new Date().toISOString(), variation }, ...l]);
-    markCheckinSent(user.id, variation).then(() => router.refresh()).catch(() => {});
-  };
+  const nav = useNav();
 
   const byId = new Map(users.map(u => [u.id, u]));
   const openProfile = (userId: string) => {
     const user = byId.get(userId);
-    if (user) nav.open?.(user);
+    if (user) nav.open(user);
   };
 
   const due = checkinsDue(users, log, new Date(now));

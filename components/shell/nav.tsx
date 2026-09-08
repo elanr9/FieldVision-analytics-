@@ -2,6 +2,7 @@
 import { createContext, useContext } from 'react';
 import type { Screen } from '@/components/motion';
 import { ProfileScreen } from '@/components/profile/ProfileScreen';
+import type { CheckinLogRow } from '@/lib/checkins';
 import type { UserRecord } from '@/lib/types';
 
 export interface NavContextValue {
@@ -9,6 +10,10 @@ export interface NavContextValue {
   pop: () => void;
   /** Every account, so screens can link parents to their athlete and back */
   users: UserRecord[];
+  /** Check-in texts sent so far, server rows plus this session's sends */
+  checkinLog: CheckinLogRow[];
+  /** Records a check-in text the founder just sent from any screen */
+  onCheckinSent: (user: UserRecord, variation: number) => void;
 }
 
 export interface Nav extends NavContextValue {
@@ -16,7 +21,7 @@ export interface Nav extends NavContextValue {
   open: (user: UserRecord) => void;
 }
 
-export const NavContext = createContext<NavContextValue>({ push: () => {}, pop: () => {}, users: [] });
+export const NavContext = createContext<NavContextValue>({ push: () => {}, pop: () => {}, users: [], checkinLog: [], onCheckinSent: () => {} });
 
 export function useNav(): Nav {
   const ctx = useContext(NavContext);
