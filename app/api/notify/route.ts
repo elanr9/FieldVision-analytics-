@@ -17,16 +17,42 @@ interface SubscriptionRecord {
   paid_at?: string | null;
 }
 
+interface FounderCallRecord {
+  user_id?: string;
+  scheduled_at?: string | null;
+}
+
+type EventRecord = ProfileRecord & SubscriptionRecord & FounderCallRecord;
+
 interface WebhookPayload {
   table: string;
   op: 'INSERT' | 'UPDATE';
-  record: ProfileRecord & SubscriptionRecord;
-  old_record: (ProfileRecord & SubscriptionRecord) | null;
+  record: EventRecord;
+  old_record: EventRecord | null;
 }
 
 function dollars(cents: number | null | undefined): string {
   if (!cents) return '';
   return ` $${(cents / 100).toFixed(2).replace(/\.00$/, '')}`;
+}
+
+/** "Tue, Sep 9 at 4:30 PM ET" for a stored ISO timestamp. */
+function callTime(iso: string | null | undefined): string {
+  if (!iso) return 'an unknown time';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'an unknown time';
+  const day = date.toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const time = date.toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${day} at ${time} ET`;
 }
 
 async function lookupName(userId: string | undefined): Promise<string> {
@@ -75,6 +101,11 @@ export async function POST(request: NextRequest) {
     body = `${name} just started their 7 day trial`;
     userId = record.user_id ?? '';
     eventType = 'trial';
+  } else if (table === 'founder_calls' && op === 'INSERT') {
+    const name = await lookupName(record.user_id);
+    title = 'Call booked';
+    body = `${name} booked a call with you for ${callTime(record.scheduled_at)}`;
+    eventType = 'call';
   } else if (table === 'user_subscriptions') {
     // Trial checkouts write plan=full + paid_at with amount_cents=0.
     // Those are not payments — trial_started_at already covers the alert.
