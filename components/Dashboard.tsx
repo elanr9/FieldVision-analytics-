@@ -5,10 +5,12 @@ import { ActivityTab, countToday } from '@/components/activity/ActivityTab';
 import type { CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord } from '@/lib/notifications';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
+import { OnboardingTab } from '@/components/onboarding/OnboardingTab';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
+import { includedUsers, type Funnel, type Paywall } from '@/lib/funnel';
 import { buildOverview } from '@/lib/overview';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
@@ -18,11 +20,15 @@ export default function Dashboard({
   revenue,
   notifications = [],
   checkinLog = [],
+  funnel,
+  paywall,
 }: {
   users: UserRecord[];
   revenue: RevenueSnapshot;
   notifications?: NotificationRecord[];
   checkinLog?: CheckinLogRow[];
+  funnel: Funnel;
+  paywall: Paywall;
 }) {
   const [tab, setTab] = useState('overview');
   const [stack, setStack] = useState<Screen[]>([]);
@@ -61,8 +67,9 @@ export default function Dashboard({
       <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={setTab} badge={countToday(notifications)} />
       <div style={{ paddingTop: 16 }}>
         <Fade id={tab}>
-          {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={checkinLog} />}
           {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
+          {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={checkinLog} />}
+          {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
         </Fade>
       </div>
     </main>

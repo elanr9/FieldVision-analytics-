@@ -1,0 +1,125 @@
+const { SectionHeading, StatCard, Card, ChartLegend, SegmentedControl, Input, UserList } = window.InkboundDesignSystem_74e23a;
+const RANGE_LABEL = { '7d': 'Last 7 days', '30d': 'Last 30 days', all: 'All time', custom: 'Custom' };
+function RangePicker({ range, onRange }) {
+  return (<>
+    <SegmentedControl style={{ marginBottom: 16 }} value={range} onChange={onRange} options={Object.keys(RANGE_LABEL).map(k => ({ key: k, label: RANGE_LABEL[k] }))} />
+    {range === 'custom' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, marginTop: -8 }}><Input type="date" /><span style={{ font: '400 14px var(--font-sans)', color: 'var(--text-tertiary)' }}>to</span><Input type="date" /></div>}
+  </>);
+}
+function Tile(p) { return <StatCard {...p} value={<CountUp value={p.value} />} />; }
+/** Big number + caption; the anchor of each Overview view. */
+function Hero({ label, value, caption, accent, right }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, padding: '4px 2px 0' }}>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ margin: 0, font: '600 11px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-secondary)' }}>{label}</p>
+        <p style={{ margin: '2px 0 0', font: '700 34px/1.1 var(--font-sans)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', color: accent ? 'var(--metric-money)' : 'var(--text-primary)' }}><CountUp value={value} /></p>
+        {caption && <p style={{ margin: '4px 0 0', font: '400 12px/1.4 var(--font-sans)', color: 'var(--text-secondary)' }}>{caption}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+/** Tiny text toggle used inside section headers: Weeks · Months. */
+function MiniToggle({ value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', gap: 2, background: 'var(--gray-100)', borderRadius: 9999, padding: 2, flexShrink: 0 }}>
+      {options.map(([k, l]) => <button key={k} type="button" onClick={() => onChange(k)} style={{ border: 0, borderRadius: 9999, padding: '4px 10px', cursor: 'pointer', font: '600 11px/1.4 var(--font-sans)', background: value === k ? 'var(--surface-card)' : 'transparent', color: value === k ? 'var(--text-primary)' : 'var(--text-secondary)', boxShadow: value === k ? 'var(--shadow-sm)' : 'none', transition: 'all var(--duration-fast) var(--ease-out)' }}>{l}</button>)}
+    </div>
+  );
+}
+function Mini({ label, value, sub, accent }) {
+  return <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-default)', borderRadius: 12, padding: '10px 12px', minWidth: 0 }}><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</p><p style={{ margin: '2px 0 0', font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: accent ? 'var(--metric-money)' : 'inherit' }}><CountUp value={value} /></p>{sub && <p style={{ margin: '2px 0 0', font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</p>}</div>;
+}
+function FIcon({ id, size = 16, color = 'var(--ink-600)' }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d={window.INK_DATA.ICON[id]} /></svg>; }
+function UsageBar({ f, max, onClick }) {
+  return (
+    <button type="button" onClick={onClick} style={{ display: 'grid', gridTemplateColumns: '16px 104px 1fr auto', alignItems: 'center', gap: 10, width: '100%', padding: '9px 0', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+      <FIcon id={f.id} />
+      <span style={{ font: '500 13px/1.3 var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.label}</span>
+      <span style={{ height: 8, borderRadius: 4, background: 'var(--surface-track)', overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: (f.events30 / max * 100) + '%', borderRadius: 4, background: 'var(--ink-700)', animation: 'ink-grow-x 600ms var(--ease-out) both', transformOrigin: '0 0' }} /></span>
+      <span style={{ font: '600 13px/1.3 var(--font-sans)', fontVariantNumeric: 'tabular-nums', minWidth: 48, textAlign: 'right' }}>{f.users30}<span style={{ font: '400 11px var(--font-sans)', color: 'var(--text-tertiary)' }}> users</span></span>
+    </button>
+  );
+}
+function OverviewTab({ D, real, push }) {
+  const [view, setView] = React.useState('revenue');
+  const [grain, setGrain] = React.useState('months');
+  const [sel, setSel] = React.useState(null);
+  const buckets = grain === 'months' ? D.months : D.weeks;
+  const T = D.totals;
+  React.useEffect(() => setSel(null), [grain, view]);
+  const picked = sel != null ? buckets[sel] : null;
+  const people = (title, users) => push({ key: 'people-' + title, node: <PeopleScreen title={title} users={users} /> });
+  const paying = real.filter(u => u.status === 'paying');
+  const usage = [...D.usage].sort((a, b) => b.events30 - a.events30), maxU = usage[0].events30;
+  const head = (title) => <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><SectionHeading style={{ marginBottom: 0 }}>{title}</SectionHeading><MiniToggle value={grain} onChange={setGrain} options={[['weeks', 'Weeks'], ['months', 'Months']]} /></div>;
+  const g3 = { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 };
+  return (
+    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0,1fr)' }}>
+      <SegmentedControl value={view} onChange={setView} options={[{ key: 'revenue', label: 'Revenue' }, { key: 'growth', label: 'Growth' }, { key: 'usage', label: 'Usage' }]} />
+      <Fade id={view}>
+        {view === 'revenue' && <div style={{ display: 'grid', gap: 12 }}>
+          <Hero label="All-time revenue" value={D.usd(T.revenue)} accent caption={T.payments + ' payments since April'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}><CountUp value={D.usd(T.mrr)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>MRR</p></div>} />
+          <Card padding="wide" style={{ paddingBottom: 10 }}>
+            {head(picked ? (picked.label + (grain === 'weeks' ? ' week' : '') + ' · ' + D.usd(picked.revenue) + (picked.partial ? ' so far' : '')) : 'Revenue by ' + (grain === 'months' ? 'month' : 'week'))}
+            <InkBars data={buckets} series={[{ key: 'revenue', color: 'var(--chart-revenue)' }]} format={v => '$' + Math.round(v / 100 / 100) / 10 + 'k'} selected={sel} onSelect={setSel} />
+          </Card>
+          <div style={g3}>
+            <Mini label="Sep so far" value={D.usd(D.months[5].revenue)} sub={'on pace for ' + D.usd(Math.round(D.months[5].revenue / D.month.daysIn * D.month.daysTotal))} />
+            <Mini label="New payers" value={'+' + D.month.newPaying} sub="this month" accent />
+            <Mini label="Cancelled" value={'−' + D.month.churned} sub={'−' + D.usd(D.month.churnedMrr) + ' MRR'} />
+          </div>
+        </div>}
+        {view === 'growth' && <div style={{ display: 'grid', gap: 12 }}>
+          <Hero label="All-time signups" value={T.signups} caption={T.trials + ' started a trial · ' + T.payingEver + ' paid'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: 'var(--metric-money)' }}><CountUp value={Math.round(T.payingEver / T.signups * 1000) / 10 + '%'} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>signup → paid</p></div>} />
+          <Card padding="wide" style={{ paddingBottom: 10 }}>
+            {head(picked ? (picked.label + ' · ' + picked.signups + ' signups · ' + picked.trials + ' trials · ' + picked.paying + ' paid') : 'Signups · trials · paid by ' + (grain === 'months' ? 'month' : 'week'))}
+            <InkBars data={buckets} series={[{ key: 'signups', color: 'var(--chart-signups)' }, { key: 'trials', color: 'var(--chart-trials)' }, { key: 'paying', color: 'var(--chart-conversions)' }]} selected={sel} onSelect={setSel} />
+            <ChartLegend items={[{ label: 'Signups', color: 'var(--chart-signups)' }, { label: 'Trials', color: 'var(--chart-trials)' }, { label: 'Paid', color: 'var(--chart-conversions)' }]} style={{ marginTop: 4, gap: 12 }} />
+          </Card>
+          <div style={g3}>
+            <Mini label="Sep signups" value={D.months[5].signups} sub={'Aug had ' + D.months[4].signups} />
+            <Mini label="Trial → paid" value={Math.round(T.payingEver / T.trials * 100) + '%'} sub={T.payingEver + ' of ' + T.trials + ' trials'} accent />
+            <Mini label="Churn" value={Math.round(T.churned / T.payingEver * 100) + '%'} sub={T.churned + ' of ' + T.payingEver + ' payers'} />
+          </div>
+        </div>}
+        {view === 'usage' && <div style={{ display: 'grid', gap: 12 }}>
+          <Hero label="Feature events · 30 days" value={D.usage.reduce((s, f) => s + f.events30, 0)} caption={Math.max(...D.usage.map(f => f.users30)) + ' active users · ' + D.usage.length + ' features tracked'} />
+          <Card padding="wide" style={{ paddingTop: 6, paddingBottom: 6 }}>
+            {usage.slice(0, 6).map(f => <UsageBar key={f.id} f={f} max={maxU} onClick={() => push({ key: 'usage', node: <UsageScreen D={D} focus={f.id} /> })} />)}
+            <button type="button" onClick={() => push({ key: 'usage', node: <UsageScreen D={D} /> })} style={{ display: 'block', width: '100%', padding: '10px 0 6px', background: 'none', border: 0, borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', font: '600 13px/1.3 var(--font-sans)', color: 'var(--ink-600)', textAlign: 'left' }}>Full breakdown ›</button>
+          </Card>
+          <div>
+            <SectionHeading>On Inkbound · all time</SectionHeading>
+            <div style={g3}>
+              <Mini label="Coach convos" value={D.platform.conversations} sub={D.platform.replies + ' replies'} accent />
+              <Mini label="Highlight vids" value={D.platform.videos} sub={D.platform.videosPublished + ' published'} />
+              <Mini label="Emails opened" value={D.platform.emailsOpened.toLocaleString()} sub={Math.round(D.platform.emailsOpened / D.platform.emailsSent * 100) + '% of ' + D.platform.emailsSent.toLocaleString()} />
+              <Mini label="Campaigns" value={D.platform.campaigns} sub="sent to coaches" />
+              <Mini label="Schools saved" value={D.platform.schoolsSaved.toLocaleString()} sub="in search" />
+              <Mini label="Calls booked" value={D.platform.calls} sub="with Elan" />
+            </div>
+          </div>
+        </div>}
+      </Fade>
+    </div>
+  );
+}
+function PeopleScreen({ title, users }) {
+  const { pop, open } = React.useContext(NavCtx);
+  const { UserRow } = window.InkboundDesignSystem_74e23a;
+  const pager = usePager(users, 7);
+  return (
+    <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px 64px', fontFamily: 'var(--font-sans)' }}>
+      <SubHeader title={title} onBack={pop} />
+      <div style={{ paddingTop: 16 }}><Card padding="none">
+        <p style={{ margin: 0, padding: '10px 16px', borderBottom: '1px solid var(--border-default)', font: '600 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{title.split(' · ')[0]} · {users.length}</p>
+        {pager.slice.map((u, i) => <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><UserRow user={u} showActions={false} onOpen={() => open(u)} /></div>)}
+        {!users.length && <p style={{ margin: 0, padding: '32px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' }}>No one in this group.</p>}
+        {pager.footer}
+      </Card></div>
+    </main>
+  );
+}
+Object.assign(window, { OverviewTab, RangePicker, RANGE_LABEL, PeopleScreen, Tile, Hero, Mini, MiniToggle, FIcon });
