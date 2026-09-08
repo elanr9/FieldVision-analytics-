@@ -1,0 +1,7 @@
+import React from 'react';
+/** White container with 1px border and 16px radius. selected swaps the border to ink. padding: 'default' 12px | 'wide' 16px | 'none' for lists. */
+export function Card({ selected, padding = 'default', interactive, onClick, children, style, ...rest }) {
+  const pad = { default: 12, wide: 16, none: 0 }[padding];
+  const s = { background: 'var(--surface-card)', border: `1px solid ${selected ? 'var(--border-strong)' : 'var(--border-default)'}`, borderRadius: 'var(--radius-card)', padding: pad, boxSizing: 'border-box', overflow: padding === 'none' ? 'hidden' : undefined, textAlign: 'left', width: interactive ? '100%' : undefined, cursor: interactive ? 'pointer' : undefined, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', ...style };
+  return React.createElement(interactive ? 'button' : 'div', { type: interactive ? 'button' : undefined, onClick, style: s, ...rest }, children);
+}

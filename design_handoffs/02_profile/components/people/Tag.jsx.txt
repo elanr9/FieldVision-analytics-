@@ -1,0 +1,7 @@
+import React from 'react';
+/** Tiny inline marker next to a name: INTERNAL (dark), PARENT (gray text), or a soft "Parent account" pill. */
+export function Tag({ kind = 'internal', children }) {
+  if (kind === 'text') return <span style={{ marginLeft: 6, font: '600 10px/1 var(--font-sans)', color: 'var(--text-tertiary)' }}>{children || 'PARENT'}</span>;
+  if (kind === 'soft') return <span style={{ display: 'inline-flex', borderRadius: 'var(--radius-full)', padding: '2px 8px', font: '600 11px/1.5 var(--font-sans)', background: 'var(--gray-100)', color: 'var(--text-secondary)' }}>{children || 'Parent account'}</span>;
+  return <span style={{ display: 'inline-flex', borderRadius: 'var(--radius-xs)', padding: '1px 4px', font: '700 9px/1.4 var(--font-sans)', background: 'var(--status-internal-bg)', color: 'var(--status-internal-fg)', marginLeft: 6 }}>{children || 'INTERNAL'}</span>;
+}

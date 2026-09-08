@@ -1,0 +1,2 @@
+export interface ContactActionsProps { phone?: string | null; email?: string | null; size?: 'sm' | 'lg'; onText?: () => void; onCall?: () => void; onEmail?: () => void; }
+export function ContactActions(props: ContactActionsProps): JSX.Element;

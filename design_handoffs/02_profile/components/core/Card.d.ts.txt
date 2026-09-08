@@ -1,0 +1,11 @@
+export interface CardProps {
+  /** ink border instead of gray — used for the currently picked metric tile */
+  selected?: boolean;
+  padding?: 'default' | 'wide' | 'none';
+  /** renders as a <button> */
+  interactive?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}
+export function Card(props: CardProps): JSX.Element;

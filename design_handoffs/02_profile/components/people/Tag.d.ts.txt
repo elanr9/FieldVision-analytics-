@@ -1,0 +1,2 @@
+export interface TagProps { /** internal = dark 9px block; text = plain uppercase gray; soft = gray pill */ kind?: 'internal' | 'text' | 'soft'; children?: React.ReactNode; }
+export function Tag(props: TagProps): JSX.Element;
