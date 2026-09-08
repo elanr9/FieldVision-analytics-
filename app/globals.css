@@ -1,16 +1,20 @@
 @import 'tailwindcss';
+@import './styles.css';
 
 :root {
   color-scheme: light;
 }
 
-/* Matches bg-neutral-50 so iOS rubber band overscroll never flashes white */
+/* Matches --surface-page so iOS rubber band overscroll never flashes white */
 html {
-  background-color: #fafafa;
+  background-color: var(--surface-page);
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
+  font-family: var(--font-sans);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
 }
