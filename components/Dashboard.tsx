@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ActivityTab, countToday } from '@/components/activity/ActivityTab';
 import { markCheckinSent } from '@/components/activity/actions';
+import { CalendarTab } from '@/components/calendar/CalendarTab';
 import type { CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord } from '@/lib/notifications';
 import { Fade, ScreenStack, type Screen } from '@/components/motion';
@@ -92,6 +93,7 @@ export default function Dashboard({
           {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
           {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} />}
           {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
+          {tab === 'calendar' && <CalendarTab users={real} />}
         </Fade>
       </div>
     </main>
