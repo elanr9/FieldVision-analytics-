@@ -17,8 +17,6 @@ export interface RevenueSnapshot {
   error?: string;
 }
 
-const FIELDVISION_TYPE = 'fieldvision_subscription';
-
 // TEMPORARY: inflates all displayed revenue. Set back to 1 to restore real numbers.
 const TEMP_DISPLAY_MULTIPLIER = 1;
 
@@ -94,25 +92,48 @@ async function listAllSucceededPaymentIntents(
   return all;
 }
 
+/** Months covered by one billing period, e.g. a 6 month price is 6, a yearly price is 12. */
+function monthsPerPeriod(recurring: Stripe.Price.Recurring): number | null {
+  const count = recurring.interval_count;
+  switch (recurring.interval) {
+    case 'month':
+      return count;
+    case 'year':
+      return count * 12;
+    case 'week':
+      return (count * 7) / (365 / 12);
+    default:
+      return null;
+  }
+}
+
+/** Monthly normalized amount in cents, floored the same way Stripe does. */
 function mrrFromSubscription(sub: Stripe.Subscription): number {
   let mrr = 0;
   for (const item of sub.items.data) {
     const price = item.price;
-    if (!price?.unit_amount) continue;
+    if (!price?.unit_amount || !price.recurring) continue;
+    const months = monthsPerPeriod(price.recurring);
+    if (months === null) continue;
     const amount = price.unit_amount * (item.quantity ?? 1);
-    if (price.recurring?.interval === 'year') {
-      mrr += Math.round(amount / 12);
-    } else if (price.recurring?.interval === 'month') {
-      mrr += amount;
-    }
+    mrr += Math.floor(amount / months);
   }
   return mrr;
 }
 
 /**
- * Loads Stripe revenue for FieldVision Pro. Cash collected comes from
- * succeeded PaymentIntents (matches Stripe gross). MRR ignores lifetime
- * plans and actively discounted subscriptions so it matches Stripe MRR.
+ * A past due subscriber who has already asked to cancel will not recover, so
+ * Stripe drops them from MRR immediately instead of waiting for the cancel.
+ */
+function isAbandoned(sub: Stripe.Subscription): boolean {
+  return sub.status === 'past_due' && sub.cancel_at_period_end;
+}
+
+/**
+ * Loads Stripe revenue for the whole account. Cash collected comes from
+ * succeeded PaymentIntents (matches Stripe gross volume). MRR follows the
+ * Stripe Billing definition: active and past_due subscriptions, monthly
+ * normalized, ignoring lifetime plans and 100% discounted subscriptions.
  */
 export async function loadRevenueSnapshot(
   excludedUserIds: Set<string>,
@@ -139,7 +160,7 @@ export async function loadRevenueSnapshot(
     [paymentIntents, searchResult] = await Promise.all([
       listAllSucceededPaymentIntents(stripe),
       stripe.subscriptions.search({
-        query: `metadata['type']:'${FIELDVISION_TYPE}' AND status:'active'`,
+        query: "status:'active' OR status:'past_due'",
         limit: 100,
       }),
     ]);
@@ -184,6 +205,7 @@ export async function loadRevenueSnapshot(
     if (userId && excludedUserIds.has(userId)) continue;
     if (isLifetimePlan(sub.metadata?.plan_type)) continue;
     if (hasActiveDiscount(sub)) continue;
+    if (isAbandoned(sub)) continue;
     activeSubscriptionCount++;
     mrrCents += mrrFromSubscription(sub);
   }
