@@ -35,6 +35,27 @@ export interface DossierBackground {
   schoolsRespondedCount: number | null;
   offersCount: number | null;
   highlightVideoUrl: string | null;
+  sport: string | null;
+  motivation: string | null;
+  whyCollegeSoccer: string | null;
+  usedOtherServices: string | null;
+  heardAboutUs: string | null;
+  birthday: string | null;
+  recruitingClarity: string | null;
+  hasEmailedCoaches: string | null;
+  outreachChallenge: string | null;
+  highlightVideosCount: number | null;
+  highlightChallenge: string | null;
+  weeklyTimeAvailable: string | null;
+  recruitingStressLevel: string | null;
+  educationLevel: string | null;
+  collegeName: string | null;
+  schoolSizePreference: string | null;
+  settingPreference: string | null;
+  priorityRankings: string[];
+  proAspiration: string | null;
+  naiaJucoPathInterest: string | null;
+  parentInviteChoice: string | null;
 }
 
 export interface DossierVideo {
@@ -66,8 +87,14 @@ export interface DossierReply {
   coachEmail: string | null;
   schoolName: string | null;
   subject: string | null;
+  sentAt: string | null;
   repliedAt: string;
+  /** First 160 chars of the coach's reply, for list rows */
   preview: string | null;
+  /** The athlete's outreach email as plain text */
+  outreachBody: string | null;
+  /** The coach's full reply as plain text */
+  replyBody: string | null;
 }
 
 export interface DossierViewer {
@@ -133,6 +160,27 @@ interface IntakeRow {
   schools_responded_count: number | null;
   offers_count: number | null;
   highlight_video_url: string | null;
+  sport: string | null;
+  motivation: string | null;
+  why_college_soccer: string | null;
+  used_other_services: string | null;
+  heard_about_us: string | null;
+  birthday: string | null;
+  recruiting_clarity: string | null;
+  has_emailed_coaches: string | null;
+  outreach_challenge: string | null;
+  highlight_videos_count: number | null;
+  highlight_challenge: string | null;
+  weekly_time_available: string | null;
+  recruiting_stress_level: string | null;
+  education_level: string | null;
+  college_name: string | null;
+  school_size_preference: string | null;
+  setting_preference: string | null;
+  priority_rankings: string[] | null;
+  pro_aspiration: string | null;
+  naia_juco_path_interest: string | null;
+  parent_invite_choice: string | null;
 }
 
 interface ProjectRow {
@@ -157,6 +205,7 @@ interface EmailRow {
   open_count: number | null;
   replied_at: string | null;
   reply_body: string | null;
+  body_html?: string | null;
 }
 
 interface ViewRow {
@@ -185,6 +234,26 @@ function heightLabel(inches: number | null): string | null {
   return `${ft}'${rem}"`;
 }
 
+/** Turns a stored email HTML body into readable plain text with paragraph breaks. */
+function htmlToText(html: string | null): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text || null;
+}
+
 export function formatHeight(inches: number | null): string | null {
   return heightLabel(inches);
 }
@@ -210,7 +279,7 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     supabase
       .from('user_onboarding_intake')
       .select(
-        'club_team, position, secondary_position, grad_year, high_school, home_city, home_state, height_in, weight_lb, dominant_foot, gpa_unweighted, gpa_weighted, sat_total, act_composite, league_level, starter_status, intended_majors, division_preference, preferred_states, dream_schools, recruiting_start_status, schools_contacted_count, schools_responded_count, offers_count, highlight_video_url',
+        'club_team, position, secondary_position, grad_year, high_school, home_city, home_state, height_in, weight_lb, dominant_foot, gpa_unweighted, gpa_weighted, sat_total, act_composite, league_level, starter_status, intended_majors, division_preference, preferred_states, dream_schools, recruiting_start_status, schools_contacted_count, schools_responded_count, offers_count, highlight_video_url, sport, motivation, why_college_soccer, used_other_services, heard_about_us, birthday, recruiting_clarity, has_emailed_coaches, outreach_challenge, highlight_videos_count, highlight_challenge, weekly_time_available, recruiting_stress_level, education_level, college_name, school_size_preference, setting_preference, priority_rankings, pro_aspiration, naia_juco_path_interest, parent_invite_choice',
       )
       .eq('user_id', userId)
       .maybeSingle(),
@@ -228,7 +297,7 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
       .limit(12),
     supabase
       .from('user_sent_emails')
-      .select(emailSelect)
+      .select(`${emailSelect}, body_html`)
       .eq('user_id', userId)
       .eq('status', 'sent')
       .not('replied_at', 'is', null)
@@ -361,10 +430,13 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     coachEmail: e.coach_email,
     schoolName: e.school_id ? schoolNameById.get(e.school_id) ?? null : null,
     subject: e.subject,
+    sentAt: e.sent_at ?? e.created_at,
     repliedAt: e.replied_at!,
     preview: e.reply_body
       ? e.reply_body.replace(/\s+/g, ' ').trim().slice(0, 160)
       : null,
+    outreachBody: htmlToText(e.body_html ?? null),
+    replyBody: e.reply_body?.trim() || null,
   }));
 
   const topViewers: DossierViewer[] = Array.from(viewerMap.entries())
@@ -415,6 +487,27 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
         schoolsRespondedCount: intake.schools_responded_count,
         offersCount: intake.offers_count,
         highlightVideoUrl: intake.highlight_video_url,
+        sport: intake.sport,
+        motivation: intake.motivation,
+        whyCollegeSoccer: intake.why_college_soccer,
+        usedOtherServices: intake.used_other_services,
+        heardAboutUs: intake.heard_about_us,
+        birthday: intake.birthday,
+        recruitingClarity: intake.recruiting_clarity,
+        hasEmailedCoaches: intake.has_emailed_coaches,
+        outreachChallenge: intake.outreach_challenge,
+        highlightVideosCount: intake.highlight_videos_count,
+        highlightChallenge: intake.highlight_challenge,
+        weeklyTimeAvailable: intake.weekly_time_available,
+        recruitingStressLevel: intake.recruiting_stress_level,
+        educationLevel: intake.education_level,
+        collegeName: intake.college_name,
+        schoolSizePreference: intake.school_size_preference,
+        settingPreference: intake.setting_preference,
+        priorityRankings: intake.priority_rankings ?? [],
+        proAspiration: intake.pro_aspiration,
+        naiaJucoPathInterest: intake.naia_juco_path_interest,
+        parentInviteChoice: intake.parent_invite_choice,
       }
     : null;
 

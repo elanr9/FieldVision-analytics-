@@ -1,26 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CountUp, Fade } from '@/components/motion';
 import { FIcon } from '@/components/overview/FIcon';
 import { Hero } from '@/components/overview/Hero';
 import { Mini } from '@/components/overview/Mini';
 import { MiniToggle } from '@/components/overview/MiniToggle';
-import { SAMPLE_USAGE } from '@/components/overview/sampleUsage';
 import { SubHeader } from '@/components/shell/SubHeader';
 import { useNav } from '@/components/shell/nav';
 import { Card } from '@/components/ui/Card';
 import { SectionHeading } from '@/components/ui/SectionHeading';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { addDays } from '@/lib/dates';
 import { formatShortDay } from '@/lib/profile';
-import { FEATURES, type Feature } from '@/lib/usage';
+import type { Feature } from '@/lib/usage';
 import { Delta } from './Delta';
 import { InkLineChart } from './InkLineChart';
 import { Spark } from './Spark';
 
 export interface UsageScreenProps {
+  /** Every feature with its 30-day series, from the Overview's UsageSnapshot */
+  features: Feature[];
   /** Feature id to open on Trend; omitted starts on Ranked */
   focus?: string;
 }
@@ -31,32 +31,13 @@ type Metric = 'users' | 'events' | 'perUser';
 const METRIC_KEY: Record<Metric, 'users30' | 'events30' | 'perUser'> = { users: 'users30', events: 'events30', perUser: 'perUser' };
 const METRIC_UNIT: Record<Metric, string> = { users: 'users', events: 'events', perUser: 'per user' };
 const RAMP = ['var(--ink-900)', 'var(--ink-700)', 'var(--ink-500)', 'var(--ink-400)', 'var(--ink-300)', 'var(--ink-200)', 'var(--gray-300)', 'var(--gray-200)'];
-const ICON: Record<string, string> = Object.fromEntries(SAMPLE_USAGE.map(s => [s.id, s.icon]));
-
-/** Loads 30-day feature usage from /api/usage. */
-function useUsage(): { usage: Feature[] | null; loading: boolean } {
-  const [usage, setUsage] = useState<Feature[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/usage')
-      .then(res => (res.ok ? res.json() : null))
-      .then((data: Feature[] | null) => { if (!cancelled) setUsage(data); })
-      .catch(() => { if (!cancelled) setUsage(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
-  return { usage, loading };
-}
-
 const byEvents = (usage: Feature[]) => [...usage].sort((a, b) => b.events30 - a.events30);
 
-export function UsageScreen({ focus }: UsageScreenProps) {
+export function UsageScreen({ features: usage, focus }: UsageScreenProps) {
   const { pop } = useNav();
-  const { usage, loading } = useUsage();
-  const focused = FEATURES.some(f => f.id === focus) ? focus : undefined;
+  const focused = usage.some(f => f.id === focus) ? focus : undefined;
   const [metric, setMetric] = useState<Metric>('users');
-  const [sel, setSel] = useState<string | null>(focused ?? FEATURES[0].id);
+  const [sel, setSel] = useState<string | null>(focused ?? usage[0]?.id ?? null);
   const [view, setView] = useState<View>(focused ? 'trend' : 'ranked');
 
   return (
@@ -64,13 +45,11 @@ export function UsageScreen({ focus }: UsageScreenProps) {
       <SubHeader title="Feature usage" onBack={pop} />
       <div style={{ paddingTop: 16, display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0,1fr)' }}>
         <SegmentedControl value={view} onChange={k => setView(k as View)} options={[{ key: 'ranked', label: 'Ranked' }, { key: 'trend', label: 'Trend' }, { key: 'share', label: 'Share' }]} />
-        {loading && <Skeleton height={240} radius={16} />}
-        {!loading && !usage && <p style={{ margin: 0, font: '400 14px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>Usage could not be loaded.</p>}
-        {usage && <Fade id={view}>
+        <Fade id={view}>
           {view === 'ranked' && <Ranked usage={usage} metric={metric} setMetric={setMetric} sel={sel} setSel={setSel} />}
           {view === 'trend' && <Trend usage={usage} sel={sel} setSel={setSel} />}
           {view === 'share' && <Share usage={usage} />}
-        </Fade>}
+        </Fade>
       </div>
     </main>
   );
@@ -88,7 +67,7 @@ function Ranked({ usage, metric, setMetric, sel, setSel }: RankedProps) {
       <Card padding="none">
         {sorted.map((f, i) => { const on = sel === f.id; return (
           <button key={f.id} type="button" onClick={() => setSel(on ? null : f.id)} style={{ display: 'grid', gridTemplateColumns: '18px 1fr 80px auto', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', background: on ? 'var(--ink-50)' : 'transparent', border: 0, borderTop: i ? '1px solid var(--border-subtle)' : 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', transition: 'background-color var(--duration-fast)' }}>
-            <FIcon path={ICON[f.id]} size={18} color={on ? 'var(--ink-900)' : 'var(--ink-600)'} />
+            <FIcon path={f.icon} size={18} color={on ? 'var(--ink-900)' : 'var(--ink-600)'} />
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ font: '600 14px/1.3 var(--font-sans)' }}>{f.label}</span>{!f.missing && <Delta v={f.delta} />}</span>
               <span style={{ display: 'block', marginTop: 6, height: 6, borderRadius: 3, background: 'var(--surface-track)', overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: (f[key] / max * 100) + '%', background: 'var(--ink-700)', borderRadius: 3, transformOrigin: '0 0', animation: 'ink-grow-x 600ms var(--ease-out) both' }} /></span>
@@ -110,7 +89,7 @@ function Trend({ usage, sel, setSel }: TrendProps) {
   const missing = selF.missing;
   return (
     <section key={selF.id}>
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', margin: '0 -16px', padding: '0 16px 8px' }}>{byEvents(usage).map(f => <button key={f.id} type="button" onClick={() => setSel(f.id)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, border: 0, borderRadius: 9999, padding: '6px 12px', cursor: 'pointer', font: '600 12px/1.4 var(--font-sans)', background: selF.id === f.id ? 'var(--ink-700)' : 'var(--gray-100)', color: selF.id === f.id ? '#fff' : 'var(--gray-600)' }}><FIcon path={ICON[f.id]} size={14} color="currentColor" />{f.label}</button>)}</div>
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', margin: '0 -16px', padding: '0 16px 8px' }}>{byEvents(usage).map(f => <button key={f.id} type="button" onClick={() => setSel(f.id)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, border: 0, borderRadius: 9999, padding: '6px 12px', cursor: 'pointer', font: '600 12px/1.4 var(--font-sans)', background: selF.id === f.id ? 'var(--ink-700)' : 'var(--gray-100)', color: selF.id === f.id ? '#fff' : 'var(--gray-600)' }}><FIcon path={f.icon} size={14} color="currentColor" />{f.label}</button>)}</div>
       <Hero label={selF.label + ' · 30 days'} value={missing ? '—' : selF.events30} caption={missing ? selF.desc + ' · no event yet' : selF.desc + ' · ' + selF.users30 + ' users · ' + selF.perUser + ' per user'} right={missing ? undefined : <Delta v={selF.delta} />} />
       <Card padding="wide" style={{ marginTop: 12 }}>
         {missing

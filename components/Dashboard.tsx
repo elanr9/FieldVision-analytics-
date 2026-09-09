@@ -19,6 +19,7 @@ import { includedUsers, type Funnel, type Paywall } from '@/lib/funnel';
 import { buildOverview } from '@/lib/overview';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
+import type { UsageSnapshot } from '@/lib/usage';
 import type { EveryoneRecord } from '@/lib/users';
 
 export default function Dashboard({
@@ -29,6 +30,7 @@ export default function Dashboard({
   funnel,
   paywall,
   accounts = [],
+  usage,
 }: {
   users: UserRecord[];
   accounts?: EveryoneRecord[];
@@ -37,6 +39,7 @@ export default function Dashboard({
   checkinLog?: CheckinLogRow[];
   funnel: Funnel;
   paywall: Paywall;
+  usage: UsageSnapshot;
 }) {
   const [tab, setTab] = useState('overview');
   const [stack, setStack] = useState<Screen[]>([]);
@@ -94,11 +97,11 @@ export default function Dashboard({
       <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={setTab} badge={countToday(notifications)} />
       <div style={{ paddingTop: 16 }}>
         <Fade id={tab}>
-          {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
+          {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} usage={usage} push={push} />}
           {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} />}
           {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
           {tab === 'users' && <UsersTab users={accounts} />}
-          {tab === 'calendar' && <CalendarTab users={real} />}
+          {tab === 'calendar' && <CalendarTab users={accounts} />}
         </Fade>
       </div>
     </main>

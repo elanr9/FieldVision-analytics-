@@ -87,6 +87,38 @@ export function classifyUser(
   return { status: 'signed_up', interval, excludedFromMetrics: false };
 }
 
+const TEST_NAME = /^(test|tester|demo|asdf|qwerty|abc|xyz|aaa|tmp|user|hello|delete me|john doe|player one)$|\btest\b/i;
+
+export interface FakeSignals {
+  name: string;
+  email: string;
+  status: UserStatus;
+  onboarding: 'none' | 'in_progress' | 'completed';
+  lastSignInAt: string | null;
+  signupDate: string;
+  emailSharedWithAnotherUser: boolean;
+}
+
+/**
+ * Why a signed-up account looks fake, or null when it looks real. Paying and
+ * trialing users are never flagged: money is the strongest signal of a real person.
+ */
+export function fakeReason(u: FakeSignals, now: Date = new Date()): string | null {
+  if (u.status !== 'signed_up') return null;
+  if (TEST_NAME.test(u.name.trim())) return 'Test-looking name';
+  if (u.emailSharedWithAnotherUser) return 'Duplicate email';
+  // Creating the account signs the user in, so only a later sign-in counts as coming back.
+  const signupMs = new Date(u.signupDate).getTime();
+  const cameBack = u.lastSignInAt != null && new Date(u.lastSignInAt).getTime() - signupMs > DAY_MS;
+  const neverActive = u.onboarding === 'none' && !cameBack;
+  if (!u.name.trim().includes(' ') && neverActive) return 'No last name, no activity';
+  const ageDays = (now.getTime() - signupMs) / DAY_MS;
+  if (neverActive && ageDays >= 7) return 'Never opened the app';
+  return null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Sales pipeline stage for real, non-parent users who are not paying yet.
  * Ordered by how actionable the outreach is.

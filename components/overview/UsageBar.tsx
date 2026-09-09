@@ -1,7 +1,7 @@
 'use client';
 
 import { FIcon } from './FIcon';
-import type { UsageFeature } from './sampleUsage';
+import type { UsageFeature } from '@/lib/usage';
 
 export interface UsageBarProps {
   f: UsageFeature;

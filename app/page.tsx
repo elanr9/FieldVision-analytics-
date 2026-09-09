@@ -4,8 +4,16 @@ import { loadFunnel, loadPaywall, type Funnel, type Paywall } from '@/lib/funnel
 import { loadUsers } from '@/lib/queries';
 import { loadRevenueSnapshot, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
+import { loadUsage, type UsageSnapshot } from '@/lib/usage';
 import { loadEveryone, type EveryoneRecord } from '@/lib/users';
 import Dashboard from '@/components/Dashboard';
+
+const EMPTY_USAGE: UsageSnapshot = {
+  features: [],
+  detail: [],
+  activeUsers30: 0,
+  platform: { conversations: 0, replies: 0, videos: 0, videosPublished: 0, emailsSent: 0, emailsOpened: 0, campaigns: 0, schoolsSaved: 0, calls: 0 },
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -53,10 +61,14 @@ export default async function Home() {
     };
   }
 
-  const [notifications, checkinLog] = await Promise.all([
+  const [notifications, checkinLog, usage] = await Promise.all([
     loadNotifications().catch(() => []),
     loadCheckinLog().catch(() => []),
+    loadUsage(users).catch((e: unknown) => {
+      console.error('Usage load failed', e);
+      return EMPTY_USAGE;
+    }),
   ]);
 
-  return <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} />;
+  return <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} />;
 }
