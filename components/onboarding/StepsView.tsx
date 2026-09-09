@@ -9,7 +9,7 @@ import { MiniToggle } from '@/components/overview/MiniToggle';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 import type { Funnel, FunnelChapterKey, FunnelStep } from '@/lib/funnel';
 import type { UserRecord } from '@/lib/types';
-import { sharePct } from './format';
+import { count, share, sharePct } from './format';
 
 type Range = '7d' | '30d' | 'all';
 
@@ -79,12 +79,12 @@ export function StepsView({ funnel, users, push, onStep }: StepsViewProps) {
         {funnel.chapters.map((ch, ci) => {
           const isOpen = ch.key === openChapter;
           if (openChapter && !isOpen) return null;
-          const keep = ch.enter ? Math.round((ch.exit / ch.enter) * 100) : 0;
+          const keep = share(ch.exit, ch.enter);
           return (
             <div key={ch.key} style={{ borderTop: ci && !isOpen ? '1px solid var(--border-subtle)' : 0 }}>
               <button type="button" onClick={() => toggle(ch.key)} style={{ display: 'grid', gridTemplateColumns: '1fr auto 16px', alignItems: 'center', gap: 12, width: '100%', padding: '12px 16px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
-                <span><span style={{ display: 'block', font: '600 14px/1.4 var(--font-sans)' }}>{ch.label} <span style={{ font: '400 12px var(--font-sans)', color: 'var(--text-tertiary)' }}>· {ch.steps.length} steps</span></span><span style={{ display: 'block', marginTop: 6, height: 6, borderRadius: 3, background: 'var(--surface-track)', overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: keep + '%', background: ch.key === 'paywall' ? 'var(--green-600)' : 'var(--ink-700)', borderRadius: 3, transformOrigin: '0 0', animation: 'ink-grow-x 600ms var(--ease-out) both' }} /></span></span>
-                <span style={{ textAlign: 'right' }}><span style={{ display: 'block', font: '700 16px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>{keep}%</span><span style={{ font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{ch.enter} → {ch.exit}</span></span>
+                <span><span style={{ display: 'block', font: '600 14px/1.4 var(--font-sans)' }}>{ch.label} <span style={{ font: '400 12px var(--font-sans)', color: 'var(--text-tertiary)' }}>· {ch.steps.length} steps</span></span><span style={{ display: 'block', marginTop: 6, height: 6, borderRadius: 3, background: 'var(--surface-track)', overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: (keep ?? 0) + '%', background: ch.key === 'paywall' ? 'var(--green-600)' : 'var(--ink-700)', borderRadius: 3, transformOrigin: '0 0', animation: 'ink-grow-x 600ms var(--ease-out) both' }} /></span></span>
+                <span style={{ textAlign: 'right' }}><span style={{ display: 'block', font: '700 16px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>{keep === null ? '—' : keep + '%'}</span><span style={{ font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{count(ch.enter)} → {count(ch.exit)}</span></span>
                 <span style={{ color: 'var(--text-tertiary)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform var(--duration-base) var(--ease-out)', fontSize: 18, lineHeight: 1 }}>›</span>
               </button>
               {isOpen && <div key={pager.page} style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both' }}>{pager.slice.map(st => <StepRow key={st.id} step={st} onClick={() => onStep(st.id)} />)}{pager.footer}</div>}
@@ -92,6 +92,7 @@ export function StepsView({ funnel, users, push, onStep }: StepsViewProps) {
           );
         })}
       </Card>
+      {funnel.unknownScreens.length > 0 && <p style={{ margin: 0, font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{funnel.unknownScreens.length} new {funnel.unknownScreens.length === 1 ? 'screen' : 'screens'} since the last flow sync: {funnel.unknownScreens.join(', ')}</p>}
     </div>
   );
 }

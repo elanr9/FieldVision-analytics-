@@ -143,6 +143,47 @@ export async function loadStepViews(fromIso: string, toIso: string): Promise<Ste
   return views;
 }
 
+export interface ScreenEvent {
+  userId: string;
+  /** Flow screen id, e.g. s37_paywall. */
+  screen: string;
+  kind: 'view' | 'answer';
+}
+
+interface ScreenEventRow {
+  name: string;
+  user_id: string | null;
+  properties: { screen?: unknown } | null;
+}
+
+const SCREEN_EVENT_KIND: Record<string, ScreenEvent['kind']> = {
+  onboarding_screen_view: 'view',
+  onboarding_answer: 'answer',
+};
+
+/** Every live-flow screen view and answer in range (inkbound-web and inkbound-mobile src/flow/analytics.ts). */
+export async function loadScreenEvents(fromIso: string, toIso: string): Promise<ScreenEvent[]> {
+  const supabase = adminClient();
+  const rows = await fetchAllPages<ScreenEventRow>((from, to) =>
+    supabase
+      .from('product_events')
+      .select('name, user_id, properties')
+      .in('name', Object.keys(SCREEN_EVENT_KIND))
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso)
+      .order('created_at', { ascending: true })
+      .range(from, to),
+  );
+  const events: ScreenEvent[] = [];
+  for (const row of rows) {
+    const screen = row.properties?.screen;
+    const kind = SCREEN_EVENT_KIND[row.name];
+    if (!row.user_id || typeof screen !== 'string' || !kind) continue;
+    events.push({ userId: row.user_id, screen, kind });
+  }
+  return events;
+}
+
 /** Distinct users per event name in range. Names with no rows in range map to an empty set. */
 export async function loadEventUsers(
   names: readonly string[],

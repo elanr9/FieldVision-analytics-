@@ -6,7 +6,9 @@
     "dev": "next dev -p 3050",
     "build": "next build",
     "start": "next start -p 3050",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./scripts/register-ts.mjs --test lib/*.test.ts",
+    "sync:flow": "node scripts/sync-onboarding-flow.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.6.8",

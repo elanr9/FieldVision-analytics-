@@ -1,6 +1,7 @@
-import type { OnboardingChapter, OnboardingStepDef } from './onboarding-steps';
-import type { StepView } from './onboarding-analytics';
-import type { PlanInterval, UserRecord } from './types';
+import type { ScreenEvent } from './onboarding-analytics';
+import type { FlowScreenDef } from './onboarding-flow.generated';
+import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowSectionKey } from './onboarding-flow';
+import type { UserRecord } from './types';
 
 /**
  * Paywall funnel signals. These are derived keys, not raw product_events names: the athlete app's
@@ -35,20 +36,34 @@ export const PAYWALL_SCREENS = {
 /** Stripe payment_type of the one time offer plan. */
 export const OFFER_PAYMENT_TYPE = 'inkbound_offer';
 
-export type FunnelChapterKey = OnboardingChapter | 'paywall';
+/** One chapter per flow section; the last section is the paywall. */
+export type FunnelChapterKey = FlowSectionKey;
+
+/** Funnel steps that come from account data instead of a flow screen. They close the paywall chapter. */
+export const TRIAL_STEP_ID = 'trial_started';
+export const SUBSCRIBED_STEP_ID = 'subscribed';
+
+/** The first flow screen; a view of it is what "started" means once the apps record screens before sign-in. */
+export const STARTED_SCREEN_ID = 's01_welcome';
+
+export type StartedSource = 'welcome_screen' | 'accounts_created';
 
 export interface FunnelStep {
   id: string;
   label: string;
   chapter: FunnelChapterKey;
   chapterLabel: string;
-  /** Distinct started users who reached this step. null when the source event does not exist yet. */
+  /** Shown only for some answers (or only reachable through a branch), so fewer people here is not a drop. */
+  conditional: boolean;
+  /** False for screens the apps emit that lib/onboarding-flow.generated.ts does not know yet. */
+  known: boolean;
+  /** Distinct started users who reached this step. null when the apps do not record this screen yet. */
   reached: number | null;
   /** reached / started × 100, one decimal. */
   pct: number | null;
-  /** reached(previous measured step) − reached(step). */
+  /** reached(previous unconditional step) − reached(step). null for conditional or untracked steps. */
   dropped: number | null;
-  /** dropped / reached(previous measured step) × 100, one decimal. */
+  /** dropped / reached(previous unconditional step) × 100, one decimal. */
   dropPct: number | null;
 }
 
@@ -57,16 +72,22 @@ export interface Chapter {
   label: string;
   short: string;
   steps: FunnelStep[];
-  /** People who arrived at the first step of the chapter. */
-  enter: number;
-  /** People who reached the last step of the chapter. */
-  exit: number;
+  /** People who arrived at the first step of the chapter. null while that screen is untracked. */
+  enter: number | null;
+  /** People who reached the last unconditional step of the chapter. null while that screen is untracked. */
+  exit: number | null;
 }
 
 export interface Funnel {
   steps: FunnelStep[];
   chapters: Chapter[];
   started: number;
+  /** How `started` was measured. accounts_created is the fallback while screens before sign-in are not recorded. */
+  startedSource: StartedSource;
+  /** Screen ids seen in product_events that the generated mirror lacks. Run scripts/sync-onboarding-flow.mjs. */
+  unknownScreens: string[];
+  /** Steps before the first screen the apps record; they render as "—". */
+  untrackedSteps: number;
 }
 
 export interface PaywallPlan {
@@ -98,42 +119,25 @@ export interface DateRange {
   to: Date;
 }
 
-export const CHAPTER_ORDER: FunnelChapterKey[] = ['basic', 'checkin', 'academic', 'athletic', 'goals', 'paywall'];
+export const CHAPTER_ORDER: FunnelChapterKey[] = FLOW_SECTIONS.map(s => s.key);
 
-export const FUNNEL_CHAPTER_LABELS: Record<FunnelChapterKey, string> = {
-  basic: 'Your background',
-  checkin: "Where you're at",
-  academic: 'Your academics',
-  athletic: 'Your game',
-  goals: 'Your goals',
-  paywall: 'Paywall',
-};
+export const FUNNEL_CHAPTER_LABELS: Record<FunnelChapterKey, string> = Object.fromEntries(
+  FLOW_SECTIONS.map(s => [s.key, s.label]),
+) as Record<FunnelChapterKey, string>;
 
-export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = {
-  basic: 'Background',
-  checkin: 'Where',
-  academic: 'Academics',
-  athletic: 'Game',
-  goals: 'Goals',
-  paywall: 'Paywall',
-};
-
-export const STARTED_STEP_ID = 'survey_intro';
-
-/** The five paywall steps that follow the survey. account_created and subscribed come from users, the rest from flow events. */
-const PAYWALL_STEPS: { id: string; label: string; event: string | null }[] = [
-  { id: 'account_created', label: 'Account created', event: null },
-  { id: 'try_free', label: 'Try free', event: PAYWALL_EVENTS.tryFreeViewed },
-  { id: 'paywall', label: 'Paywall', event: PAYWALL_EVENTS.paywallViewed },
-  { id: 'checkout', label: 'Checkout', event: PAYWALL_EVENTS.checkoutStarted },
-  { id: 'subscribed', label: 'Subscribed', event: null },
-];
+export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = Object.fromEntries(
+  FLOW_SECTIONS.map(s => [s.key, s.short]),
+) as Record<FunnelChapterKey, string>;
 
 /** Inkbound plans shown in "Trial → paid by plan", keyed by Stripe payment_type. Prices from the live product. */
 export const PLAN_LABELS: Record<string, string> = {
   inkbound_semester: '$120 semester',
   inkbound_offer: '$60 semester',
   inkbound_monthly: '$40 monthly',
+  inkbound_quarterly: 'Quarterly',
+  yearly_240_trial: '$240 yearly',
+  monthly_29_99: '$30 monthly',
+  lifetime_499: '$499 lifetime',
 };
 
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {
@@ -155,103 +159,128 @@ export function includedUsers(users: UserRecord[]): UserRecord[] {
   return users.filter(u => !u.excludedFromMetrics && !u.isParent);
 }
 
-function usersByStep(views: StepView[], allowed: Set<string>): Map<string, Set<string>> {
-  const byStep = new Map<string, Set<string>>();
-  for (const v of views) {
-    if (!allowed.has(v.userId)) continue;
-    let set = byStep.get(v.stepId);
+/** Distinct users per screen, counting a view or an answer on that screen. */
+function usersByScreen(events: ScreenEvent[], allowed: Set<string>): Map<string, Set<string>> {
+  const byScreen = new Map<string, Set<string>>();
+  for (const e of events) {
+    if (!allowed.has(e.userId)) continue;
+    let set = byScreen.get(e.screen);
     if (!set) {
       set = new Set();
-      byStep.set(v.stepId, set);
+      byScreen.set(e.screen, set);
     }
-    set.add(v.userId);
+    set.add(e.userId);
   }
-  return byStep;
+  return byScreen;
 }
 
 /**
- * Users who started the survey: a survey_intro view in range. When the athlete app sent no survey_intro
- * views at all in range, falls back to included users who signed up in range and have an intake row.
+ * Who started onboarding. The apps only write product_events once a user is signed in, and the account is
+ * created mid-flow (s31_verify_phone), so until they record the screens before sign-in the honest count is
+ * accounts created in range: everyone with an account went through the flow to get it.
+ * Once s01_welcome views arrive the funnel switches to them on its own.
  */
-function startedUsers(byStep: Map<string, Set<string>>, included: UserRecord[], range: DateRange): Set<string> {
-  const viewers = byStep.get(STARTED_STEP_ID);
-  if (viewers && viewers.size > 0) return viewers;
-  return new Set(included.filter(u => u.onboarding !== 'none' && isWithin(u.signupDate, range)).map(u => u.id));
+function startedUsers(
+  byScreen: Map<string, Set<string>>,
+  included: UserRecord[],
+  range: DateRange,
+): { users: Set<string>; source: StartedSource } {
+  const viewers = byScreen.get(STARTED_SCREEN_ID);
+  if (viewers && viewers.size > 0) return { users: viewers, source: 'welcome_screen' };
+  return {
+    users: new Set(included.filter(u => isWithin(u.signupDate, range)).map(u => u.id)),
+    source: 'accounts_created',
+  };
 }
 
 export interface BuildFunnelInput {
-  defs: OnboardingStepDef[];
-  views: StepView[];
+  events: ScreenEvent[];
   users: UserRecord[];
-  /** Distinct users per paywall event name in range. Absent names mean the event does not exist yet. */
-  eventUsers: Map<string, Set<string>>;
   range: DateRange;
+  /** Defaults to the generated mirror; tests pass a small list. */
+  defs?: FlowScreenDef[];
 }
 
 interface MeasuredStep {
   id: string;
   label: string;
   chapter: FunnelChapterKey;
+  conditional: boolean;
+  known: boolean;
   reached: number | null;
 }
 
-function surveySteps(defs: OnboardingStepDef[], byStep: Map<string, Set<string>>, started: Set<string>): MeasuredStep[] {
-  return defs.map(def => {
-    const viewers = byStep.get(def.id) ?? new Set<string>();
-    const reached = def.id === STARTED_STEP_ID ? started.size : [...viewers].filter(id => started.has(id)).length;
-    return { id: def.id, label: def.question ?? def.lead ?? def.id, chapter: def.chapter, reached };
+function countStarted(users: Set<string> | undefined, started: Set<string>): number {
+  if (!users) return 0;
+  let n = 0;
+  for (const id of users) if (started.has(id)) n++;
+  return n;
+}
+
+/**
+ * Screen steps in flow order. Screens before the first one the apps have recorded are untracked (null);
+ * everything from there on is a real count, including zeros.
+ */
+function screenSteps(
+  byScreen: Map<string, Set<string>>,
+  started: Set<string>,
+  source: StartedSource,
+  defs?: FlowScreenDef[],
+): MeasuredStep[] {
+  const screens = flowScreens(byScreen.keys(), defs);
+  const firstTracked = screens.findIndex(s => (byScreen.get(s.id)?.size ?? 0) > 0);
+  return screens.map((s, i) => {
+    const untracked = firstTracked === -1 || i < firstTracked;
+    const isStart = s.id === STARTED_SCREEN_ID && source === 'welcome_screen';
+    const section = sectionByNumber(s.section);
+    return {
+      id: s.id,
+      label: s.label,
+      chapter: section.key,
+      conditional: s.conditional,
+      known: s.known,
+      reached: isStart ? started.size : untracked ? null : countStarted(byScreen.get(s.id), started),
+    };
   });
 }
 
-function paywallSteps(input: BuildFunnelInput, started: Set<string>, included: UserRecord[]): MeasuredStep[] {
-  const startedUsersList = included.filter(u => started.has(u.id));
-  return PAYWALL_STEPS.map(step => {
-    let reached: number | null;
-    if (step.id === 'account_created') {
-      reached = startedUsersList.filter(u => isWithin(u.signupDate, input.range)).length;
-    } else if (step.id === 'subscribed') {
-      reached = startedUsersList.filter(u => isWithin(u.paidAt, input.range)).length;
-    } else {
-      const users = step.event ? input.eventUsers.get(step.event) : undefined;
-      reached = users ? [...users].filter(id => started.has(id)).length : null;
-    }
-    return { id: step.id, label: step.label, chapter: 'paywall', reached };
-  });
+/** Trial and paid come from account data, so they are always measured. */
+function accountSteps(started: Set<string>, included: UserRecord[], range: DateRange): MeasuredStep[] {
+  const cohort = included.filter(u => started.has(u.id));
+  const paywall = FLOW_SECTIONS[FLOW_SECTIONS.length - 1].key;
+  return [
+    { id: TRIAL_STEP_ID, label: 'Started a free trial', chapter: paywall, conditional: false, known: true, reached: cohort.filter(u => isWithin(u.trialStartedAt, range)).length },
+    { id: SUBSCRIBED_STEP_ID, label: 'Paid', chapter: paywall, conditional: false, known: true, reached: cohort.filter(u => isWithin(u.paidAt, range)).length },
+  ];
 }
 
 function toFunnelSteps(measured: MeasuredStep[], started: number): FunnelStep[] {
   let previousReached = started;
   return measured.map(m => {
-    if (m.reached === null) {
-      return { ...m, chapterLabel: FUNNEL_CHAPTER_LABELS[m.chapter], pct: null, dropped: null, dropPct: null };
-    }
-    const dropped = Math.max(0, previousReached - m.reached);
-    const step: FunnelStep = {
-      ...m,
-      chapterLabel: FUNNEL_CHAPTER_LABELS[m.chapter],
-      pct: pct1(m.reached, started),
-      dropped,
-      dropPct: pct1(dropped, previousReached),
-    };
+    const base = { ...m, chapterLabel: FUNNEL_CHAPTER_LABELS[m.chapter] };
+    if (m.reached === null) return { ...base, pct: null, dropped: null, dropPct: null };
+    const pct = pct1(m.reached, started);
+    if (m.conditional) return { ...base, pct, dropped: null, dropPct: null };
+    const arrivals = previousReached;
+    const dropped = Math.max(0, arrivals - m.reached);
     previousReached = m.reached;
-    return step;
+    return { ...base, pct, dropped, dropPct: pct1(dropped, arrivals) };
   });
 }
 
 export function buildChapters(steps: FunnelStep[]): Chapter[] {
-  return CHAPTER_ORDER.map(key => {
-    const chapterSteps = steps.filter(s => s.chapter === key);
-    const first = chapterSteps[0];
-    const last = chapterSteps[chapterSteps.length - 1];
-    // First and last step of every chapter have a real source, so reached is never null there.
-    const firstReached = first?.reached ?? 0;
+  return FLOW_SECTIONS.map(section => {
+    const chapterSteps = steps.filter(s => s.chapter === section.key);
+    // Arrivals are measured at the first tracked step; untracked leading screens carry no information.
+    const first = chapterSteps.find(s => s.reached !== null);
+    const lastUnconditional = [...chapterSteps].reverse().find(s => !s.conditional) ?? chapterSteps[chapterSteps.length - 1];
     return {
-      key,
-      label: FUNNEL_CHAPTER_LABELS[key],
-      short: FUNNEL_CHAPTER_SHORT[key],
+      key: section.key,
+      label: section.label,
+      short: section.short,
       steps: chapterSteps,
-      enter: firstReached + (first?.dropped ?? 0),
-      exit: last?.reached ?? 0,
+      enter: first?.reached == null ? null : first.reached + (first.dropped ?? 0),
+      exit: lastUnconditional?.reached ?? null,
     };
   });
 }
@@ -259,11 +288,21 @@ export function buildChapters(steps: FunnelStep[]): Chapter[] {
 export function buildFunnel(input: BuildFunnelInput): Funnel {
   const included = includedUsers(input.users);
   const allowed = new Set(included.map(u => u.id));
-  const byStep = usersByStep(input.views, allowed);
-  const started = startedUsers(byStep, included, input.range);
-  const measured = [...surveySteps(input.defs, byStep, started), ...paywallSteps(input, started, included)];
-  const steps = toFunnelSteps(measured, started.size);
-  return { steps, chapters: buildChapters(steps), started: started.size };
+  const byScreen = usersByScreen(input.events, allowed);
+  const started = startedUsers(byScreen, included, input.range);
+  const measured = [
+    ...screenSteps(byScreen, started.users, started.source, input.defs),
+    ...accountSteps(started.users, included, input.range),
+  ];
+  const steps = toFunnelSteps(measured, started.users.size);
+  return {
+    steps,
+    chapters: buildChapters(steps),
+    started: started.users.size,
+    startedSource: started.source,
+    unknownScreens: steps.filter(s => !s.known).map(s => s.id),
+    untrackedSteps: steps.filter(s => s.reached === null).length,
+  };
 }
 
 export interface BuildPaywallInput {
@@ -273,6 +312,42 @@ export interface BuildPaywallInput {
   range: DateRange;
 }
 
+/** Tiles shown in "Trial → paid by plan". */
+export const PLAN_TILES = 3;
+
+/** payment_type values the billing functions write as a status, not a plan (cancel-subscription, parent invites). */
+const NON_PLAN_PAYMENT_TYPES = /^(canceled|trial_expired)$|pending|expired/;
+
+function planLabel(paymentType: string): string {
+  const known = PLAN_LABELS[paymentType];
+  if (known) return known;
+  const words = paymentType.replace(/^inkbound_/, '').replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have
+ * paid. Plans come from the cohort's own Stripe payment_type values (most trials first) so a new price shows up on
+ * its own; the current Inkbound plans fill any empty tiles.
+ */
+export function buildPlans(included: UserRecord[], range: DateRange): PaywallPlan[] {
+  const byPlan = new Map<string, UserRecord[]>();
+  for (const u of included) {
+    const key = u.paymentType;
+    if (key === null || NON_PLAN_PAYMENT_TYPES.test(key) || !isWithin(u.trialStartedAt, range)) continue;
+    byPlan.set(key, [...(byPlan.get(key) ?? []), u]);
+  }
+  const keys = [...byPlan.keys()].sort((a, b) => (byPlan.get(b)?.length ?? 0) - (byPlan.get(a)?.length ?? 0) || a.localeCompare(b));
+  for (const key of Object.keys(PLAN_LABELS)) {
+    if (keys.length >= PLAN_TILES) break;
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys.slice(0, PLAN_TILES).map(key => {
+    const trials = byPlan.get(key) ?? [];
+    return { key, label: planLabel(key), trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
+  });
+}
+
 export function buildPaywall(input: BuildPaywallInput): Paywall {
   const included = includedUsers(input.users);
   const allowed = new Set(included.map(u => u.id));
@@ -280,11 +355,7 @@ export function buildPaywall(input: BuildPaywallInput): Paywall {
     const users = input.eventUsers.get(event);
     return users ? [...users].filter(id => allowed.has(id)).length : null;
   };
-  // Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have paid.
-  const plans = Object.keys(PLAN_LABELS).map(key => {
-    const trials = included.filter(u => u.paymentType === key && isWithin(u.trialStartedAt, input.range));
-    return { key, label: PLAN_LABELS[key], trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
-  });
+  const plans = buildPlans(included, input.range);
   // Paid after the offer comes from subscriptions, not flow events.
   const offerPaid = input.eventUsers.has(PAYWALL_EVENTS.offer90Viewed)
     ? included.filter(u => u.paymentType === OFFER_PAYMENT_TYPE && u.status === 'paying' && isWithin(u.paidAt, input.range)).length
@@ -311,23 +382,16 @@ export function buildPaywall(input: BuildPaywallInput): Paywall {
 }
 
 /**
- * Runtime modules are imported lazily so lib/funnel.test.ts can load this file under node's type stripping,
- * which cannot resolve extensionless TypeScript specifiers.
+ * Client components import the builders and constants above, so the Supabase-backed modules are loaded lazily here
+ * to keep them out of the browser bundle.
  */
 async function loadDeps() {
-  const [steps, analytics, queries] = await Promise.all([
-    import('./onboarding-steps'),
-    import('./onboarding-analytics'),
-    import('./queries'),
-  ]);
-  return { ONBOARDING_STEPS: steps.ONBOARDING_STEPS, ...analytics, loadUsers: queries.loadUsers };
+  const [analytics, queries] = await Promise.all([import('./onboarding-analytics'), import('./queries')]);
+  return { ...analytics, loadUsers: queries.loadUsers };
 }
 
 /** Distinct users per paywall signal that the app has ever emitted; never-seen signals are left out so they render as "—". */
-async function loadPaywallEventUsers(
-  deps: Awaited<ReturnType<typeof loadDeps>>,
-  range: DateRange,
-): Promise<Map<string, Set<string>>> {
+async function loadPaywallEventUsers(deps: Awaited<ReturnType<typeof loadDeps>>, range: DateRange): Promise<Map<string, Set<string>>> {
   const [seen, byKey] = await Promise.all([
     deps.loadSeenPaywallKeys(),
     deps.loadPaywallKeyUsers(range.from.toISOString(), range.to.toISOString()),
@@ -338,12 +402,11 @@ async function loadPaywallEventUsers(
 export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funnel> {
   const deps = await loadDeps();
   const range = rangeForDays(days);
-  const [allUsers, views, eventUsers] = await Promise.all([
+  const [allUsers, events] = await Promise.all([
     users ?? deps.loadUsers(),
-    deps.loadStepViews(range.from.toISOString(), range.to.toISOString()),
-    loadPaywallEventUsers(deps, range),
+    deps.loadScreenEvents(range.from.toISOString(), range.to.toISOString()),
   ]);
-  return buildFunnel({ defs: deps.ONBOARDING_STEPS, views, users: allUsers, eventUsers, range });
+  return buildFunnel({ events, users: allUsers, range });
 }
 
 export async function loadPaywall(days = 30, users?: UserRecord[]): Promise<Paywall> {

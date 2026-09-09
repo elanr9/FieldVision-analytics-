@@ -3,7 +3,8 @@
 import { Card } from '@/components/ui/Card';
 import { SectionHeading } from '@/components/ui/SectionHeading';
 import { Hero } from '@/components/overview/Hero';
-import type { Funnel, FunnelStep } from '@/lib/funnel';
+import { SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type Funnel, type FunnelStep } from '@/lib/funnel';
+import { count, STARTED_NOUN, UNTRACKED_NOTE } from './format';
 import { Rate } from './Rate';
 
 export interface SummaryViewProps {
@@ -16,15 +17,19 @@ const hasDrop = (s: FunnelStep): s is FunnelStep & { dropPct: number; dropped: n
 export function SummaryView({ funnel, onStep }: SummaryViewProps) {
   const f = funnel.steps;
   const by = (id: string): FunnelStep | undefined => f.find(s => s.id === id);
-  const last = f[f.length - 1];
+  const paid = by(SUBSCRIBED_STEP_ID) ?? f[f.length - 1];
+  const trial = by(TRIAL_STEP_ID)?.reached ?? null;
+  const paywallChapter = funnel.chapters[funnel.chapters.length - 1];
+  const reachedPaywall = paywallChapter.steps[0]?.reached ?? null;
   const worst = f.filter(hasDrop).sort((a, b) => b.dropPct - a.dropPct).slice(0, 3);
+  const fromAccounts = funnel.startedSource === 'accounts_created';
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <Hero label="Started survey → paid" value={(last.pct ?? 0) + '%'} accent caption={last.reached + ' of ' + funnel.started + ' people who started · last 30 days'} />
+      <Hero label={(fromAccounts ? 'Created an account' : 'Started onboarding') + ' → paid'} value={count(paid.pct) + '%'} accent caption={count(paid.reached) + ' of ' + funnel.started + ' ' + STARTED_NOUN[funnel.startedSource] + ' · last 30 days' + (funnel.untrackedSteps ? ' · ' + UNTRACKED_NOTE : '')} />
       <Card padding="wide" style={{ paddingTop: 2, paddingBottom: 2 }}>
-        <Rate label="1 · Finish the survey" a={funnel.started} b={by('account_created')?.reached ?? null} />
-        <div style={{ borderTop: '1px solid var(--border-subtle)' }}><Rate label="2 · Start the free trial" a={by('account_created')?.reached ?? null} b={by('try_free')?.reached ?? null} warn /></div>
-        <div style={{ borderTop: '1px solid var(--border-subtle)' }}><Rate label="3 · Trial → paid" a={by('try_free')?.reached ?? null} b={last.reached} warn /></div>
+        <Rate label="1 · Reach the paywall" a={funnel.started} b={reachedPaywall} />
+        <div style={{ borderTop: '1px solid var(--border-subtle)' }}><Rate label="2 · Start the free trial" a={reachedPaywall} b={trial} warn /></div>
+        <div style={{ borderTop: '1px solid var(--border-subtle)' }}><Rate label="3 · Trial → paid" a={trial} b={paid.reached} warn /></div>
       </Card>
       <div>
         <SectionHeading>Where most people leave</SectionHeading>

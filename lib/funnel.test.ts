@@ -1,14 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import type { UserRecord } from './types';
-import type { StepView } from './onboarding-analytics';
-import type { FunnelStep } from './funnel';
-// @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
-import { ONBOARDING_STEPS } from './onboarding-steps.ts';
-// @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
-import { buildFunnel, buildPaywall, PAYWALL_EVENTS } from './funnel.ts';
-// @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
-import { derivePaywallKeys } from './onboarding-analytics.ts';
+import { derivePaywallKeys, type ScreenEvent } from './onboarding-analytics';
+import { FLOW_SCREEN_DEFS, type FlowScreenDef } from './onboarding-flow.generated';
+import { flowScreens } from './onboarding-flow';
+import { buildFunnel, buildPaywall, buildPlans, PAYWALL_EVENTS, SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type FunnelStep } from './funnel';
 
 const NOW = new Date('2026-09-08T12:00:00');
 const range = { from: new Date('2026-08-09T12:00:00'), to: NOW };
@@ -58,19 +55,24 @@ function user(id: string, opts: UserOpts = {}): UserRecord {
   };
 }
 
-const stepIds: string[] = ONBOARDING_STEPS.map((s: { id: string }) => s.id);
+const DEFS: FlowScreenDef[] = FLOW_SCREEN_DEFS;
+const screenIndex = (id: string) => DEFS.findIndex(d => d.id === id);
 
-/** Views for every survey step from survey_intro up to and including `lastStepId`. */
-function walk(userId: string, lastStepId: string): StepView[] {
-  const end = stepIds.indexOf(lastStepId);
-  return stepIds.slice(0, end + 1).map(stepId => ({ userId, stepId }));
+function views(userId: string, ...screens: string[]): ScreenEvent[] {
+  return screens.map(screen => ({ userId, screen, kind: 'view' as const }));
+}
+
+/** Screens from `fromId` up to and including `toId`, in flow order. */
+function walk(userId: string, fromId: string, toId: string): ScreenEvent[] {
+  return views(userId, ...DEFS.slice(screenIndex(fromId), screenIndex(toId) + 1).map(d => d.id));
 }
 
 const users: UserRecord[] = [
   user('u1', { trialStartedAt: IN_RANGE, paidAt: IN_RANGE, paymentType: 'inkbound_semester' }),
   user('u2', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
-  user('u3', { signupDate: BEFORE_RANGE }),
-  user('u4', { signupDate: BEFORE_RANGE }),
+  user('u3'),
+  // Account in range but no events: an app build that does not track yet. Counts as started, drops at the first screen.
+  user('u4'),
   user('u5', { signupDate: BEFORE_RANGE }),
   // Paid in range without a trial in range: counts nowhere in the plan split.
   user('u6', { signupDate: BEFORE_RANGE, paidAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
@@ -78,14 +80,18 @@ const users: UserRecord[] = [
   user('mom', { isParent: true }),
 ];
 
-const views: StepView[] = [
-  ...walk('u1', 'parent_invite_email'),
-  ...walk('u2', 'parent_invite_email'),
-  ...walk('u3', 'hometown'),
-  ...walk('u4', 'name'),
-  ...walk('u5', 'survey_intro'),
-  ...walk('admin', 'parent_invite_email'),
-  ...walk('mom', 'parent_invite_email'),
+// Today the apps only write events once signed in, so nothing before the account screen's answer is recorded.
+const events: ScreenEvent[] = [
+  { userId: 'u1', screen: 's31_verify_phone', kind: 'answer' },
+  ...walk('u1', 's32_find_home', 's37_paywall'),
+  ...views('u1', 's33c_new_thing'),
+  { userId: 'u2', screen: 's31_verify_phone', kind: 'answer' },
+  ...views('u2', 's32_find_home', 's33_goals', 's34_building_plan', 's35_plan_ready'),
+  { userId: 'u3', screen: 's31_verify_phone', kind: 'answer' },
+  ...views('u3', 's32_find_home'),
+  ...walk('u5', 's32_find_home', 's38_one_time_offer'),
+  ...walk('admin', 's32_find_home', 's38_one_time_offer'),
+  ...walk('mom', 's32_find_home', 's38_one_time_offer'),
 ];
 
 const eventUsers = new Map<string, Set<string>>([
@@ -93,58 +99,102 @@ const eventUsers = new Map<string, Set<string>>([
   [PAYWALL_EVENTS.tryFreeTapped, new Set(['u1', 'u2', 'admin'])],
 ]);
 
-const funnel = buildFunnel({ defs: ONBOARDING_STEPS, views, users, eventUsers, range });
+const funnel = buildFunnel({ events, users, range });
 const by = (id: string): FunnelStep => {
   const step = funnel.steps.find(s => s.id === id);
   assert.ok(step, `missing step ${id}`);
   return step;
 };
+const drop = (id: string) => [by(id).reached, by(id).pct, by(id).dropped, by(id).dropPct];
 
-test('started counts real survey_intro viewers only', () => {
-  assert.equal(funnel.started, 5);
-  assert.equal(funnel.steps.length, ONBOARDING_STEPS.length + 5);
-  assert.deepEqual(by('survey_intro'), {
-    id: 'survey_intro',
-    label: 'Survey intro',
-    chapter: 'basic',
-    chapterLabel: 'Your background',
-    reached: 5,
-    pct: 100,
-    dropped: 0,
-    dropPct: 0,
+test('started falls back to accounts created in range while screens before sign-in are untracked', () => {
+  assert.equal(funnel.startedSource, 'accounts_created');
+  assert.equal(funnel.started, 4);
+  assert.equal(funnel.untrackedSteps, screenIndex('s31_verify_phone'));
+  assert.deepEqual(by('s01_welcome'), {
+    id: 's01_welcome',
+    label: 'Welcome',
+    chapter: 'welcome',
+    chapterLabel: 'Welcome and feelings',
+    conditional: false,
+    known: true,
+    reached: null,
+    pct: null,
+    dropped: null,
+    dropPct: null,
   });
+  assert.equal(by('s30_about_you').reached, null);
 });
 
-test('reached, dropped and dropPct per survey step', () => {
-  assert.deepEqual([by('name').reached, by('name').pct, by('name').dropped, by('name').dropPct], [4, 80, 1, 20]);
-  assert.deepEqual([by('account_type').reached, by('account_type').dropped, by('account_type').dropPct], [3, 1, 25]);
-  assert.deepEqual([by('saving').reached, by('saving').dropped, by('saving').dropPct], [2, 1, 33.3]);
-  assert.equal(by('parent_invite_email').reached, 2);
+test('reached, dropped and dropPct per tracked screen, counting a view or an answer', () => {
+  assert.deepEqual(drop('s31_verify_phone'), [3, 75, 1, 25]);
+  assert.deepEqual(drop('s32_find_home'), [3, 75, 0, 0]);
+  assert.deepEqual(drop('s33_goals'), [2, 50, 1, 33.3]);
+  assert.deepEqual(drop('s34_building_plan'), [2, 50, 0, 0]);
+  assert.deepEqual(drop('s36_try_free'), [1, 25, 1, 50]);
+  assert.deepEqual(drop('s37_paywall'), [1, 25, 0, 0]);
+  assert.deepEqual(drop('s37d_parent_invite_sent'), [0, 0, null, null]);
 });
 
-test('paywall steps: missing events are null, subscribed drops from the last measured step', () => {
-  assert.equal(by('account_created').reached, 2);
-  assert.equal(by('account_created').dropped, 0);
-  assert.deepEqual([by('try_free').reached, by('try_free').pct], [2, 40]);
-  assert.deepEqual(by('paywall'), { id: 'paywall', label: 'Paywall', chapter: 'paywall', chapterLabel: 'Paywall', reached: null, pct: null, dropped: null, dropPct: null });
-  assert.equal(by('checkout').reached, null);
-  assert.deepEqual([by('subscribed').reached, by('subscribed').dropped, by('subscribed').dropPct], [1, 1, 50]);
+test('conditional screens show reach but never a drop, and do not feed the next drop', () => {
+  assert.deepEqual(drop('s33b_invite_parent'), [1, 25, null, null]);
+  assert.equal(by('s33b_invite_parent').conditional, true);
+  assert.deepEqual(drop('s34_building_plan'), [2, 50, 0, 0]);
 });
 
-test('chapter enter and exit', () => {
+test('screens the mirror does not know yet are slotted in by id and flagged', () => {
+  const unknown = by('s33c_new_thing');
+  assert.deepEqual([unknown.known, unknown.conditional, unknown.chapter, unknown.label, unknown.reached], [false, true, 'plan', 'New thing', 1]);
+  const at = (id: string) => funnel.steps.findIndex(s => s.id === id);
+  assert.ok(at('s33b_invite_parent') < at('s33c_new_thing') && at('s33c_new_thing') < at('s34_building_plan'));
+  assert.deepEqual(funnel.unknownScreens, ['s33c_new_thing']);
+});
+
+test('trial and paid close the funnel from account data', () => {
+  assert.deepEqual(drop(TRIAL_STEP_ID), [2, 50, 0, 0]);
+  assert.deepEqual(drop(SUBSCRIBED_STEP_ID), [1, 25, 1, 50]);
+  assert.equal(funnel.steps[funnel.steps.length - 1].id, SUBSCRIBED_STEP_ID);
+  assert.equal(funnel.steps.length, DEFS.length + 3);
+});
+
+test('chapter enter and exit follow the flow sections', () => {
   const chapter = (key: string) => funnel.chapters.find(c => c.key === key);
-  assert.deepEqual(funnel.chapters.map(c => c.key), ['basic', 'checkin', 'academic', 'athletic', 'goals', 'paywall']);
-  assert.deepEqual([chapter('basic')?.enter, chapter('basic')?.exit, chapter('basic')?.steps.length], [5, 3, 12]);
-  assert.deepEqual([chapter('checkin')?.enter, chapter('checkin')?.exit], [3, 2]);
-  assert.deepEqual([chapter('paywall')?.enter, chapter('paywall')?.exit, chapter('paywall')?.steps.length], [2, 1, 5]);
-  assert.equal(chapter('paywall')?.short, 'Paywall');
+  assert.deepEqual(funnel.chapters.map(c => c.key), ['welcome', 'progress', 'academics', 'game', 'personal', 'plan', 'paywall']);
+  assert.deepEqual([chapter('welcome')?.enter, chapter('welcome')?.exit], [null, null]);
+  assert.deepEqual([chapter('personal')?.enter, chapter('personal')?.exit], [4, 3]);
+  assert.deepEqual([chapter('plan')?.enter, chapter('plan')?.exit, chapter('plan')?.steps.length], [3, 2, 6]);
+  assert.deepEqual([chapter('paywall')?.enter, chapter('paywall')?.exit, chapter('paywall')?.short], [2, 1, 'Paywall']);
 });
 
-test('started falls back to signups with an intake row when no survey_intro views exist', () => {
-  const noViews = buildFunnel({ defs: ONBOARDING_STEPS, views: [], users, eventUsers, range });
-  assert.equal(noViews.started, 2);
-  assert.equal(noViews.steps[0].reached, 2);
-  assert.equal(noViews.steps[1].reached, 0);
+test('once the apps record the welcome screen, started switches to its viewers and nothing is untracked', () => {
+  const tracked = buildFunnel({ events: [...views('u1', 's01_welcome', 's02_role'), ...views('u2', 's01_welcome'), ...views('u3', 's01_welcome'), ...views('mom', 's01_welcome')], users, range });
+  assert.equal(tracked.startedSource, 'welcome_screen');
+  assert.equal(tracked.started, 3);
+  assert.equal(tracked.untrackedSteps, 0);
+  assert.deepEqual([tracked.steps[0].reached, tracked.steps[0].pct], [3, 100]);
+  assert.deepEqual([tracked.steps[1].reached, tracked.steps[1].dropped, tracked.steps[1].dropPct], [1, 2, 66.7]);
+  assert.equal(tracked.steps[2].reached, 0);
+});
+
+test('flowScreens merges observed ids into the mirror by numeric prefix and ignores non-flow names', () => {
+  const merged = flowScreens(['s12b_follow_up', 'home', 's99_future']);
+  const ids = merged.map(s => s.id);
+  assert.ok(ids.indexOf('s12_emailed') < ids.indexOf('s12b_follow_up') && ids.indexOf('s12b_follow_up') < ids.indexOf('s13_replied'));
+  assert.equal(merged.find(s => s.id === 's12b_follow_up')?.section, 2);
+  assert.equal(merged.find(s => s.id === 's99_future')?.section, 7);
+  assert.equal(merged.find(s => s.id === 's99_future')?.label, 'Future');
+  assert.ok(!ids.includes('home'));
+});
+
+test('generated flow mirror matches the athlete apps when their checkouts are present', async t => {
+  const { collectScreens, render } = await import('../scripts/sync-onboarding-flow.mjs');
+  const collected = collectScreens();
+  if (collected.sources.length === 0) {
+    t.skip('inkbound-web / inkbound-mobile not checked out next to this repo');
+    return;
+  }
+  const current = await readFile(new URL('./onboarding-flow.generated.ts', import.meta.url), 'utf8');
+  assert.equal(current, render(collected), 'run: node scripts/sync-onboarding-flow.mjs');
 });
 
 test('paywall shares: nulls for missing events, plan split follows the trial cohort', () => {
@@ -155,9 +205,25 @@ test('paywall shares: nulls for missing events, plan split follows the trial coh
   assert.equal(paywall.stalled10m, null);
   assert.deepEqual(paywall.save, { shown: null, accepted: null });
   assert.deepEqual(paywall.plans, [
+    { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
     { key: 'inkbound_semester', label: '$120 semester', trials: 1, paid: 1 },
     { key: 'inkbound_offer', label: '$60 semester', trials: 0, paid: 0 },
+  ]);
+});
+
+test('plan tiles follow the trial cohort: unknown payment types surface, most trials first, Inkbound plans fill the rest', () => {
+  const legacy = [
+    user('a', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_weekly' }),
+    user('b', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_weekly', paidAt: IN_RANGE }),
+    user('c', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
+    // Statuses stored in payment_type are not plans.
+    user('d', { trialStartedAt: IN_RANGE, paymentType: 'canceled', paidAt: IN_RANGE }),
+    user('e', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_parent_pending' }),
+  ];
+  assert.deepEqual(buildPlans(legacy, range), [
+    { key: 'inkbound_weekly', label: 'Weekly', trials: 2, paid: 1 },
     { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
+    { key: 'inkbound_semester', label: '$120 semester', trials: 0, paid: 0 },
   ]);
 });
 
