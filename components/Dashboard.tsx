@@ -11,12 +11,14 @@ import { OnboardingTab } from '@/components/onboarding/OnboardingTab';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 import { ProfileScreen } from '@/components/profile/ProfileScreen';
+import { UsersTab } from '@/components/users/UsersTab';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
 import { includedUsers, type Funnel, type Paywall } from '@/lib/funnel';
 import { buildOverview } from '@/lib/overview';
 import { formatUsd, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
+import type { EveryoneRecord } from '@/lib/users';
 
 export default function Dashboard({
   users,
@@ -25,8 +27,10 @@ export default function Dashboard({
   checkinLog = [],
   funnel,
   paywall,
+  accounts = [],
 }: {
   users: UserRecord[];
+  accounts?: EveryoneRecord[];
   revenue: RevenueSnapshot;
   notifications?: NotificationRecord[];
   checkinLog?: CheckinLogRow[];
@@ -92,6 +96,7 @@ export default function Dashboard({
           {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} push={push} />}
           {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} />}
           {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
+          {tab === 'users' && <UsersTab users={accounts} />}
         </Fade>
       </div>
     </main>
