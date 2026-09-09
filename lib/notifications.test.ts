@@ -35,7 +35,8 @@ test('save', () => {
 });
 
 test('reply', () => {
-  assert.deepEqual(buildNotificationCopy('reply', { first: 'Maya', school: 'Rice University', coach: 'Coach Alvarez' }), { title: 'Rice University replied to Maya', sub: 'Coach Alvarez' });
+  assert.deepEqual(buildNotificationCopy('reply', { first: 'Maya', school: 'Rice University', division: 'D1' }), { title: 'A D1 replied to Maya', sub: 'Rice University' });
+  assert.deepEqual(buildNotificationCopy('reply', { first: 'Maya', school: 'Rice University', division: null }), { title: 'A school replied to Maya', sub: 'Rice University' });
 });
 
 test('campaign', () => {

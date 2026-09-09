@@ -1,49 +1,95 @@
 'use client';
 
+import type { CSSProperties } from 'react';
+
 export interface FunnelBar {
   id: string;
   label: string;
-  /** % of starters still in at this bar. null when the source event does not exist yet; drawn as an empty slot. */
-  pct: number | null;
-  /** % at the bar before this one when it is not in the list (first bar of a zoomed chapter). */
-  prevPct?: number;
-  chapter: string;
+  /** Grey note after the label, e.g. "12 steps" or "only some see this". */
+  note?: string;
+  /** People counted at this bar: finished the chapter, or reached the step. null when the apps do not record it yet. */
+  count: number | null;
+  /** People who arrived at this bar and left. Drawn as a hatched amber tail after the solid bar. null when unknown. */
+  left: number | null;
+  green?: boolean;
 }
 
 export interface InkFunnelChartProps {
-  steps: FunnelBar[];
+  bars: FunnelBar[];
+  /** Everyone who started. A full-width bar means all of them. */
+  total: number;
+  /** Legend text for the solid part, e.g. "finished the chapter". */
+  solidLabel: string;
   selected: string | null;
   onSelect: (id: string) => void;
-  showLabels?: boolean;
-  height?: number;
 }
 
-/** Step funnel that always fits the width: bars sized to the step count; solid = reached, hatched cap = left at this step; green = paywall. */
-export function InkFunnelChart({ steps, selected, onSelect, showLabels, height = 150 }: InkFunnelChartProps) {
-  const w = 360, padL = 30, h = height, xLabels = showLabels && steps.length <= 8, padB = xLabels ? 16 : 6, padT = 12, n = steps.length;
-  const slot = (w - padL - 2) / n, gap = n > 20 ? Math.min(2, slot * 0.25) : 4, bw = Math.max(1.5, slot - gap);
-  const y = (p: number) => padT + (1 - p / 100) * (h - padT - padB);
-  let lastMeasured: number | null = null;
+const DASH = '—';
+const HATCH = 'repeating-linear-gradient(135deg, var(--amber-500) 0 1.5px, var(--amber-100) 1.5px 5px)';
+
+const SWATCH: CSSProperties = { display: 'inline-block', width: 10, height: 10, borderRadius: 2, marginRight: 5, verticalAlign: -1 };
+
+function widthPct(n: number, total: number): string {
+  return total ? Math.min(100, (n / total) * 100) + '%' : '0%';
+}
+
+interface RowText {
+  stat: string;
+  sub: string;
+  subColor: string;
+}
+
+function rowText(bar: FunnelBar): RowText {
+  if (bar.count === null) return { stat: DASH, sub: 'not tracked yet', subColor: 'var(--text-tertiary)' };
+  if (bar.left === null) return { stat: String(bar.count), sub: '', subColor: 'var(--text-tertiary)' };
+  const arrived = bar.count + bar.left;
+  if (bar.left > 0) return { stat: bar.count + ' of ' + arrived, sub: '−' + bar.left + ' left', subColor: 'var(--amber-800)' };
+  return { stat: bar.count + ' of ' + arrived, sub: 'no one left', subColor: 'var(--text-tertiary)' };
+}
+
+interface BarRowProps {
+  bar: FunnelBar;
+  total: number;
+  index: number;
+  on: boolean;
+  onSelect: (id: string) => void;
+}
+
+function BarRow({ bar, total, index, on, onSelect }: BarRowProps) {
+  const { stat, sub, subColor } = rowText(bar);
+  const solid = bar.green ? 'var(--green-600)' : on ? 'var(--ink-900)' : 'var(--ink-700)';
+  const untracked = bar.count === null;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto', display: 'block', fontFamily: 'var(--font-sans)' }}>
-      <defs><pattern id="ink-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.4" height="4" fill="var(--ink-200)" /></pattern></defs>
-      {[0, 25, 50, 75, 100].map(p => <g key={p}><line x1={padL} x2={w} y1={y(p)} y2={y(p)} stroke="var(--chart-grid)" /><text x={padL - 6} y={y(p) + 3.5} textAnchor="end" fontSize="10" fill="var(--gray-500)">{p}%</text></g>)}
-      {steps.map((s, i) => {
-        const x = padL + i * slot + gap / 2;
-        const on = selected === s.id;
-        const prev = lastMeasured ?? s.prevPct ?? s.pct ?? 0;
-        if (s.pct !== null) lastMeasured = s.pct;
-        const pct = s.pct;
-        return (
-          <g key={s.id} onClick={() => onSelect(s.id)} style={{ cursor: 'pointer' }}>
-            <rect x={padL + i * slot} y={0} width={slot} height={h - padB} fill={on ? 'var(--ink-50)' : 'transparent'} rx="3" />
-            {pct !== null && prev > pct && <rect x={x} y={y(prev)} width={bw} height={Math.max(0, y(pct) - y(prev))} fill="url(#ink-hatch)" rx={bw > 6 ? 2 : 0} />}
-            {pct !== null && <rect x={x} y={y(pct)} width={bw} height={Math.max(0, y(0) - y(pct))} rx={bw > 6 ? 2 : 0} fill={s.chapter === 'paywall' ? 'var(--green-600)' : on ? 'var(--ink-900)' : 'var(--ink-700)'} style={{ transformOrigin: `0 ${y(0)}px`, animation: `ink-grow 500ms var(--ease-out) ${i * (n > 20 ? 6 : 25)}ms both` }} />}
-            {showLabels && bw > 14 && <text x={x + bw / 2} y={y(pct === null ? 0 : Math.max(prev, pct)) - 4} textAnchor="middle" fontSize={bw > 30 ? 11 : 9} fontWeight="700" fill={on ? 'var(--ink-900)' : 'var(--gray-700)'} style={{ fontVariantNumeric: 'tabular-nums' }}>{pct === null ? '—' : Math.round(pct) + '%'}</text>}
-            {xLabels && <text x={x + bw / 2} y={h - 3} textAnchor="middle" fontSize="10" fontWeight={on ? 700 : 500} fill={on ? 'var(--ink-900)' : 'var(--gray-500)'}>{s.label}</text>}
-          </g>
-        );
-      })}
-    </svg>
+    <button type="button" onClick={() => onSelect(bar.id)} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', alignItems: 'center', gap: 12, width: '100%', padding: '9px 8px', background: on ? 'var(--ink-50)' : 'none', border: 0, borderTop: index ? '1px solid var(--border-subtle)' : 0, borderRadius: on ? 10 : 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+      <span style={{ minWidth: 0, display: 'grid', gap: 5 }}>
+        <span style={{ font: `${on ? 700 : 600} 13px/1.3 var(--font-sans)`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {bar.label}
+          {bar.note && <span style={{ font: '400 11px var(--font-sans)', color: 'var(--text-tertiary)' }}> · {bar.note}</span>}
+        </span>
+        <span style={{ display: 'flex', height: 12, borderRadius: 6, background: 'var(--surface-track)', overflow: 'hidden', boxSizing: 'border-box', border: untracked ? '1px dashed var(--gray-300)' : undefined }}>
+          {bar.count !== null && bar.count > 0 && <span style={{ width: widthPct(bar.count, total), background: solid, borderRadius: 6, transformOrigin: '0 0', animation: `ink-grow-x 600ms var(--ease-out) ${index * 30}ms both` }} />}
+          {bar.left !== null && bar.left > 0 && <span style={{ width: widthPct(bar.left, total), backgroundImage: HATCH, borderRadius: '0 6px 6px 0', transformOrigin: '0 0', animation: `ink-grow-x 600ms var(--ease-out) ${index * 30}ms both` }} />}
+        </span>
+      </span>
+      <span style={{ textAlign: 'right' }}>
+        <span style={{ display: 'block', font: '700 13px/1.3 var(--font-sans)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: bar.green ? 'var(--green-800)' : 'inherit' }}>{stat}</span>
+        {sub && <span style={{ display: 'block', font: '500 10px/1.3 var(--font-sans)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: subColor }}>{sub}</span>}
+      </span>
+    </button>
+  );
+}
+
+/** Horizontal funnel, one row per chapter or step. Bar length is people out of `total`; solid = stayed in, hatched amber tail = left here. */
+export function InkFunnelChart({ bars, total, solidLabel, selected, onSelect }: InkFunnelChartProps) {
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 4, font: '500 11px/1.4 var(--font-sans)', color: 'var(--text-secondary)' }}>
+        <span><span style={{ ...SWATCH, background: 'var(--ink-700)' }} />{solidLabel}</span>
+        <span><span style={{ ...SWATCH, backgroundImage: HATCH }} />left</span>
+      </div>
+      <div style={{ margin: '0 -8px' }}>
+        {bars.map((bar, i) => <BarRow key={bar.id} bar={bar} total={total} index={i} on={selected === bar.id} onSelect={onSelect} />)}
+      </div>
+    </div>
   );
 }

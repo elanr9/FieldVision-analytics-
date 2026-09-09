@@ -135,7 +135,7 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
     case 'save':
       return { title: `${first} tried to cancel, accepted free month`, sub: null };
     case 'reply':
-      return { title: `${text(vars.school) ?? 'A school'} replied to ${first}`, sub: text(vars.coach) };
+      return { title: `A ${text(vars.division) ?? 'school'} replied to ${first}`, sub: text(vars.school) };
     case 'campaign': {
       const n = text(vars.n);
       const m = text(vars.m);

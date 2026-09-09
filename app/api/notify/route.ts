@@ -89,12 +89,24 @@ function daysBetween(fromIso: string | null, to: Date): number {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86_400_000));
 }
 
-/** "Joe Calabrese" -> "Coach Calabrese". */
-function coachLabel(coachName: Json): string | null {
-  const name = str(coachName);
-  if (!name) return null;
-  const parts = name.split(/\s+/);
-  return `Coach ${parts[parts.length - 1]}`;
+/** soccer_programs.division -> short label: "NCAA D1" -> "D1", "Junior College" -> "JUCO". */
+function divisionLabel(division: string | null): string | null {
+  if (!division) return null;
+  if (division === 'Junior College') return 'JUCO';
+  return division.replace(/^NCAA\s+/, '');
+}
+
+/** Division of the school's program for the athlete's sport; falls back to any program at the school. */
+async function schoolDivision(supabase: SupabaseClient, schoolId: string, userId: string): Promise<string | null> {
+  const [programs, intake] = await Promise.all([
+    supabase.from('soccer_programs').select('gender, division').eq('school_id', schoolId),
+    supabase.from('user_onboarding_intake').select('sport').eq('user_id', userId).maybeSingle(),
+  ]);
+  const rows = (programs.data ?? []) as { gender: string | null; division: string | null }[];
+  const sport = ((intake.data as { sport: string | null } | null)?.sport ?? '').toLowerCase();
+  const gender = sport.startsWith('women') ? 'womens' : sport.startsWith('men') ? 'mens' : null;
+  const match = rows.find(r => r.gender === gender) ?? rows[0];
+  return divisionLabel(match?.division ?? null);
 }
 
 async function onboardingFinishedDaysAgo(supabase: SupabaseClient, userId: string): Promise<number> {
@@ -160,18 +172,23 @@ async function replyEvent(supabase: SupabaseClient, record: Row): Promise<Founde
   if (!sentEmailId) return null;
   const { data } = await supabase
     .from('user_sent_emails')
-    .select('user_id, school_id, coach_name')
+    .select('user_id, school_id')
     .eq('id', sentEmailId)
     .maybeSingle();
-  const sent = data as { user_id: string | null; school_id: string | null; coach_name: string | null } | null;
+  const sent = data as { user_id: string | null; school_id: string | null } | null;
   if (!sent?.user_id) return null;
 
   let school: string | null = null;
+  let division: string | null = null;
   if (sent.school_id) {
-    const { data: schoolRow } = await supabase.from('schools').select('name').eq('school_id', sent.school_id).maybeSingle();
-    school = (schoolRow as { name: string | null } | null)?.name ?? null;
+    const [schoolRow, div] = await Promise.all([
+      supabase.from('schools').select('name').eq('school_id', sent.school_id).maybeSingle(),
+      schoolDivision(supabase, sent.school_id, sent.user_id),
+    ]);
+    school = (schoolRow.data as { name: string | null } | null)?.name ?? null;
+    division = div;
   }
-  return { type: 'reply', userId: sent.user_id, vars: { school, coach: coachLabel(sent.coach_name) } };
+  return { type: 'reply', userId: sent.user_id, vars: { school, division } };
 }
 
 function campaignEvent(record: Row): FounderEvent | null {
