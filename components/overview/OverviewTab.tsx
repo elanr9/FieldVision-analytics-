@@ -14,6 +14,7 @@ import { Hero } from './Hero';
 import { Mini } from './Mini';
 import { MiniToggle } from './MiniToggle';
 import { UsageBar } from './UsageBar';
+import { UsageScreen } from '@/components/usage/UsageScreen';
 import { SAMPLE_PLATFORM, SAMPLE_USAGE } from './sampleUsage';
 
 type View = 'revenue' | 'growth' | 'usage';
@@ -29,7 +30,7 @@ export interface OverviewTabProps {
 
 const pct = (num: number, den: number) => (den ? Math.round(num / den * 1000) / 10 : 0) + '%';
 
-export function OverviewTab({ months, weeks, totals }: OverviewTabProps) {
+export function OverviewTab({ months, weeks, totals, push }: OverviewTabProps) {
   const [view, setView] = useState<View>('revenue');
   const [grain, setGrain] = useState<Grain>('months');
   const [sel, setSel] = useState<number | null>(null);
@@ -75,10 +76,8 @@ export function OverviewTab({ months, weeks, totals }: OverviewTabProps) {
         {view === 'usage' && <div style={{ display: 'grid', gap: 12 }}>
           <Hero label="Feature events · 30 days" value={SAMPLE_USAGE.reduce((s, f) => s + f.events30, 0)} caption={Math.max(...SAMPLE_USAGE.map(f => f.users30)) + ' active users · ' + SAMPLE_USAGE.length + ' features tracked'} />
           <Card padding="wide" style={{ paddingTop: 6, paddingBottom: 6 }}>
-            {/* TODO(handoff-3): push UsageScreen focused on f.id */}
-            {usage.slice(0, 6).map(f => <UsageBar key={f.id} f={f} max={maxU} onClick={() => {}} />)}
-            {/* TODO(handoff-3): push UsageScreen */}
-            <button type="button" onClick={() => {}} style={{ display: 'block', width: '100%', padding: '10px 0 6px', background: 'none', border: 0, borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', font: '600 13px/1.3 var(--font-sans)', color: 'var(--ink-600)', textAlign: 'left' }}>Full breakdown ›</button>
+            {usage.slice(0, 6).map(f => <UsageBar key={f.id} f={f} max={maxU} onClick={() => push({ key: 'usage', node: <UsageScreen focus={f.id} /> })} />)}
+            <button type="button" onClick={() => push({ key: 'usage', node: <UsageScreen /> })} style={{ display: 'block', width: '100%', padding: '10px 0 6px', background: 'none', border: 0, borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', font: '600 13px/1.3 var(--font-sans)', color: 'var(--ink-600)', textAlign: 'left' }}>Full breakdown ›</button>
           </Card>
           <div>
             <SectionHeading><span style={{ display: 'inline-flex', alignItems: 'center' }}>On Inkbound · all time<span style={{ font: '600 10px/1.4 var(--font-sans)', padding: '2px 8px', borderRadius: 9999, background: 'var(--gray-100)', color: 'var(--text-secondary)', marginLeft: 8, textTransform: 'none', letterSpacing: 'normal' }}>Sample data</span></span></SectionHeading>
