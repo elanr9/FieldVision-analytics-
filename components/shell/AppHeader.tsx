@@ -28,6 +28,7 @@ export function AppHeader({ stats, onStat, tab, onTab, badge }: AppHeaderProps) 
     { key: 'activity', label: 'Activity', badge },
     { key: 'onboarding', label: 'Onboarding' },
     { key: 'users', label: 'Users' },
+    { key: 'calendar', label: 'Calendar' },
   ];
   return (
     <header style={{ position: 'sticky', top: 0, zIndex: 20, margin: '0 -16px', padding: 'calc(var(--safe-top) + 12px) 16px 0', background: 'rgb(247 248 250 / .92)', backdropFilter: 'saturate(1.4) blur(12px)', WebkitBackdropFilter: 'saturate(1.4) blur(12px)', borderBottom: '1px solid var(--border-default)' }}>
