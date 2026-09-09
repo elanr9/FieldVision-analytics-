@@ -1,0 +1,34 @@
+:root{
+/* Ink — brand primary, sampled from the Inkbound mark (#203A52) */
+--ink-50:#F2F5F8;--ink-100:#E1E8EF;--ink-200:#C3D0DD;--ink-300:#96ABBF;--ink-400:#6684A0;--ink-500:#3F5F7F;--ink-600:#2C4A68;--ink-700:#203A52;--ink-800:#172B3D;--ink-900:#0F1D2A;
+/* Neutrals — cool grays tinted toward ink */
+--gray-0:#FFFFFF;--gray-50:#F7F8FA;--gray-100:#EEF0F3;--gray-200:#DFE3E8;--gray-300:#C7CDD5;--gray-400:#9AA3AE;--gray-500:#6B7581;--gray-600:#4E5863;--gray-700:#363E48;--gray-800:#232A32;--gray-900:#141920;
+/* Semantic hues — one per user status */
+--green-100:#E3F5EC;--green-500:#12A36F;--green-600:#0F8A5F;--green-800:#0B5E41;
+--sky-100:#E2F1FA;--sky-500:#1B94D1;--sky-600:#0E7FB8;--sky-800:#0A5A85;
+--amber-100:#FBF0DC;--amber-200:#F3DDB0;--amber-500:#D69523;--amber-600:#B7791F;--amber-800:#7A4E0C;
+--red-100:#FBE5E5;--red-200:#F3C6C6;--red-500:#D94A4A;--red-600:#C43D3D;--red-800:#8E2626;
+--violet-100:#ECE8FA;--violet-500:#6D5BD0;--violet-800:#3F3388;
+/* Surfaces */
+--surface-page:var(--gray-50);--surface-card:var(--gray-0);--surface-sunken:var(--gray-100);--surface-track:var(--gray-100);--surface-inverse:var(--ink-700);
+/* Borders */
+--border-default:var(--gray-200);--border-subtle:var(--gray-100);--border-strong:var(--ink-700);--border-input:var(--gray-300);
+/* Text */
+--text-primary:var(--gray-900);--text-secondary:var(--gray-500);--text-tertiary:var(--gray-400);--text-inverse:#FFFFFF;--text-brand:var(--ink-700);--text-link:var(--ink-600);
+/* Interactive */
+--action-primary:var(--ink-700);--action-primary-hover:var(--ink-800);--action-secondary:var(--gray-100);--action-secondary-hover:var(--gray-200);--focus-ring:var(--ink-100);--focus-border:var(--ink-500);
+/* Status */
+--status-paying-bg:var(--green-100);--status-paying-fg:var(--green-800);
+--status-trialing-bg:var(--sky-100);--status-trialing-fg:var(--sky-800);
+--status-trial-ended-bg:var(--amber-100);--status-trial-ended-fg:var(--amber-800);
+--status-signed-up-bg:var(--gray-100);--status-signed-up-fg:var(--gray-500);
+--status-churned-bg:var(--red-100);--status-churned-fg:var(--red-800);
+--status-comped-bg:var(--gray-200);--status-comped-fg:var(--gray-600);
+--status-internal-bg:var(--gray-800);--status-internal-fg:#FFFFFF;
+/* Metric accents */
+--metric-money:var(--green-600);--metric-neutral:var(--gray-900);
+/* Chart series */
+--chart-signups:var(--gray-400);--chart-trials:var(--sky-500);--chart-conversions:var(--green-600);--chart-revenue:var(--ink-700);--chart-grid:var(--gray-100);--chart-dropoff:var(--amber-500);
+/* Pipeline stage dots */
+--stage-trial-ending:var(--sky-500);--stage-trial-lost:var(--amber-500);--stage-paywall:var(--violet-500);--stage-churned:var(--red-500);--stage-onboarding:var(--gray-400);--stage-never:var(--gray-300);
+}

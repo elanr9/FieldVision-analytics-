@@ -1,0 +1,61 @@
+const { Card, Input, SegmentedControl } = window.InkboundDesignSystem_74e23a;
+const RIGHT = {
+  paying: (u, D) => u.planLabel,
+  trialing: (u, D) => 'ends in ' + u.trialEndsIn + 'h',
+  churned: (u, D) => 'left ' + D.ago(u.cancelledAgo == null ? 0 : u.cancelledAgo),
+  trial_ended: (u, D) => 'ended ' + D.ago(u.trialEndedAgo == null ? 0 : u.trialEndedAgo),
+  signed_up: (u, D) => u.onboarding === 'in_progress' ? 'stuck · ' + (u.stepId || 'onboarding') : u.stoppedAtPaywall ? 'saw paywall' : 'joined ' + u.joined,
+  comped: () => 'comped',
+};
+function NameRow({ u, D, right, onOpen, sub }) {
+  return (
+    <button type="button" onClick={onOpen} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', padding: '11px 16px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+      <span style={{ minWidth: 0 }}><span style={{ display: 'block', font: '500 14px/1.4 var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</span>{sub && <span style={{ display: 'block', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{sub}</span>}</span>
+      <span style={{ flexShrink: 0, font: '400 12px/1.4 var(--font-sans)', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{right}</span>
+    </button>
+  );
+}
+function UsersTab({ D, onOpen }) {
+  const [seg, setSeg] = React.useState('customers');
+  const [sub, setSub] = React.useState('paying');
+  const [q, setQ] = React.useState('');
+  const all = D.users.filter(u => !u.excludedFromMetrics);
+  const real = all.filter(u => !u.junk && !u.isParent), junk = all.filter(u => u.junk), parents = all.filter(u => u.isParent && !u.junk);
+  const buckets = {
+    customers: { label: 'Customers', subs: [['paying', 'Paying', u => u.status === 'paying'], ['trialing', 'Trialing', u => u.status === 'trialing'], ['churned', 'Churned', u => u.status === 'churned']] },
+    leads: { label: 'Leads', subs: [['trial_ended', 'Trial ended', u => u.status === 'trial_ended'], ['paywall', 'Saw paywall', u => u.status === 'signed_up' && u.stoppedAtPaywall], ['stuck', 'Stuck', u => u.status === 'signed_up' && u.onboarding === 'in_progress']] },
+    parents: { label: 'Parents', subs: [['all', 'All', () => true], ['paying', 'Athlete paying', p => (D.byId[p.athleteId] || {}).status === 'paying'], ['trialing', 'Athlete trialing', p => (D.byId[p.athleteId] || {}).status === 'trialing'], ['active', 'Opened app', p => p.parentActive]] },
+    junk: { label: 'Likely fake', subs: [['all', 'All', () => true]] },
+  };
+  const b = buckets[seg];
+  React.useEffect(() => { setSub(b.subs[0][0]); }, [seg]);
+  const pool = seg === 'junk' ? junk : seg === 'parents' ? parents : real;
+  const subDef = b.subs.find(x => x[0] === sub) || b.subs[0];
+  const ql = q.trim().toLowerCase();
+  const rows = (ql ? all.filter(u => (u.name + ' ' + u.email + ' ' + (u.team || '') + ' ' + (u.phone || '')).toLowerCase().includes(ql)) : pool.filter(subDef[2])).sort((a, b) => a.signupDaysAgo - b.signupDaysAgo);
+  const pager = usePager(rows, (seg === 'junk' || seg === 'parents') && !ql ? 6 : 8);
+  const count = fn => pool.filter(fn).length;
+  const segLabel = k => k === 'customers' ? 'Customers ' + real.filter(u => ['paying', 'trialing', 'churned'].includes(u.status)).length : k === 'leads' ? 'Leads ' + real.filter(u => ['trial_ended', 'signed_up'].includes(u.status)).length : k === 'parents' ? 'Parents ' + parents.length : 'Fake ' + junk.length;
+  return (
+    <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'minmax(0,1fr)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 2px' }}>
+        <p style={{ margin: 0, font: '400 12px/1.4 var(--font-sans)', color: 'var(--text-secondary)' }}><b style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{all.length}</b> accounts · <b style={{ color: 'var(--metric-money)', fontWeight: 600 }}>{real.filter(u => u.status === 'paying').length}</b> paying · <b style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{real.length}</b> athletes · {parents.length} parents · {junk.length} fake</p>
+      </div>
+      <Input type="search" placeholder="Search anyone" value={q} onChange={e => setQ(e.target.value)} style={{ padding: '8px 12px', fontSize: 14, lineHeight: '20px' }} />
+      {!ql && <>
+        <SegmentedControl value={seg} onChange={setSeg} options={Object.keys(buckets).map(k => ({ key: k, label: segLabel(k) }))} />
+        {b.subs.length > 1 && <div style={{ overflowX: 'auto', margin: '0 -16px', padding: '0 16px' }}><MiniToggle value={sub} onChange={setSub} options={b.subs.map(([k, l, fn]) => [k, l + ' ' + count(fn)])} /></div>}
+      </>}
+      <Fade id={seg + sub + (ql ? 'q' : '')}>
+        <Card padding="none">
+          {ql && <p style={{ margin: 0, padding: '8px 16px', borderBottom: '1px solid var(--border-subtle)', font: '600 11px/1.4 var(--font-sans)', color: 'var(--text-secondary)' }}>{rows.length} match{rows.length === 1 ? '' : 'es'}</p>}
+          {pager.slice.length === 0 && <p style={{ margin: 0, padding: '28px 16px', textAlign: 'center', font: '400 14px var(--font-sans)', color: 'var(--text-secondary)' }}>Nobody here.</p>}
+          {pager.slice.map((u, i) => <div key={u.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><NameRow u={u} D={D} onOpen={() => onOpen(u)} right={u.isParent ? (D.byId[u.athleteId] ? 'athlete ' + D.STATUS_LABEL[D.byId[u.athleteId].status].toLowerCase() : 'no athlete linked') : seg === 'junk' && !ql ? u.joined : (RIGHT[u.status] || RIGHT.signed_up)(u, D)} sub={u.isParent ? 'Parent of ' + (D.byId[u.athleteId] ? D.byId[u.athleteId].name : '—') + (u.parentActive ? ' · opened the app' : ' · never opened') : seg === 'junk' && !ql ? u.junkReason : (ql ? D.STATUS_LABEL[u.status] : undefined)} /></div>)}
+          {pager.footer}
+        </Card>
+      </Fade>
+      {seg === 'junk' && !ql && <p style={{ margin: 0, font: '400 11px/1.5 var(--font-sans)', color: 'var(--text-tertiary)', padding: '0 2px' }}>Flagged by rule: test-looking name or email, no last name with zero activity, duplicate email, or never opened the app. Excluded from every metric.</p>}
+    </div>
+  );
+}
+Object.assign(window, { UsersTab, NameRow });
