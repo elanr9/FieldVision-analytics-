@@ -43,6 +43,8 @@ export interface SubscriptionRow {
   stripe_subscription_id: string | null;
   amount_cents: number | null;
   paid_at: string | null;
+  /** Last change to the row; for canceled subs this is when the cancellation landed */
+  updated_at: string | null;
 }
 
 /** Raw row from user_onboarding_intake, only the fields we need */
@@ -75,9 +77,15 @@ export interface UserRecord {
   parentName: string | null;
   parentEmail: string | null;
   signupDate: string;
+  /** Most recent auth sign-in, null when the account has never logged in */
+  lastSignInAt: string | null;
+  /** Why this signed-up account looks fake ("Test-looking name"), null when it looks real */
+  fakeReason: string | null;
   trialStartedAt: string | null;
   trialEndsAt: string | null;
   paidAt: string | null;
+  /** When a churned user's subscription was cancelled, null otherwise */
+  cancelledAt: string | null;
   paymentType: string | null;
   status: UserStatus;
   interval: PlanInterval;

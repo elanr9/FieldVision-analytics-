@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { classifyUser, pipelineStage, TRIAL_MS } from './classify';
+import { classifyUser, fakeReason, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
 import { deriveOnboardingStatus, resolveFromIntake } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
@@ -37,7 +37,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
       .order('created_at', { ascending: false }),
     supabase
       .from('user_subscriptions')
-      .select('user_id, plan, payment_type, stripe_subscription_id, amount_cents, paid_at'),
+      .select('user_id, plan, payment_type, stripe_subscription_id, amount_cents, paid_at, updated_at'),
     supabase
       .from('user_onboarding_intake')
       .select(
@@ -67,13 +67,24 @@ export async function loadUsers(): Promise<UserRecord[]> {
   }
 
   const authEmailByUser = new Map<string, string>();
+  const lastSignInByUser = new Map<string, string>();
   if (!authRes.error) {
     for (const u of authRes.data.users) {
       if (u.email) authEmailByUser.set(u.id, u.email);
+      if (u.last_sign_in_at) lastSignInByUser.set(u.id, u.last_sign_in_at);
     }
   }
 
   const now = new Date();
+
+  const resolveEmail = (profile: ProfileRow): string =>
+    authEmailByUser.get(profile.user_id) ?? profile.email ?? profile.notification_email ?? '';
+
+  const usersPerEmail = new Map<string, number>();
+  for (const profile of profiles) {
+    const email = resolveEmail(profile).toLowerCase();
+    if (email) usersPerEmail.set(email, (usersPerEmail.get(email) ?? 0) + 1);
+  }
 
   return profiles.map(profile => {
     const sub = subByUser.get(profile.user_id);
@@ -83,6 +94,9 @@ export async function loadUsers(): Promise<UserRecord[]> {
     const isParent = profile.account_type === 'parent';
     const hasFullPlan = sub?.plan === 'full';
     const onboarding = deriveOnboardingStatus(intake, profile.trial_started_at, hasFullPlan);
+    const name = profile.full_name ?? 'Unknown';
+    const email = resolveEmail(profile);
+    const lastSignInAt = lastSignInByUser.get(profile.user_id) ?? null;
 
     const trialEndsAt = profile.trial_started_at
       ? new Date(new Date(profile.trial_started_at).getTime() + TRIAL_MS).toISOString()
@@ -105,12 +119,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
 
     return {
       id: profile.user_id,
-      name: profile.full_name ?? 'Unknown',
-      email:
-        authEmailByUser.get(profile.user_id) ??
-        profile.email ??
-        profile.notification_email ??
-        '',
+      name,
+      email,
       phone: normalizePhone(profile.phone_number ?? intake?.phone_number ?? null),
       team: profile.current_team ?? intake?.club_team ?? null,
       position: profile.positions?.[0] ?? intake?.position ?? null,
@@ -118,9 +128,25 @@ export async function loadUsers(): Promise<UserRecord[]> {
       parentName: intake?.parent_first_name ?? null,
       parentEmail: parentEmailByUser.get(profile.user_id) ?? null,
       signupDate: profile.created_at,
+      lastSignInAt,
+      fakeReason: isParent
+        ? null
+        : fakeReason(
+            {
+              name,
+              email,
+              status: c.status,
+              onboarding,
+              lastSignInAt,
+              signupDate: profile.created_at,
+              emailSharedWithAnotherUser: (usersPerEmail.get(email.toLowerCase()) ?? 0) > 1,
+            },
+            now,
+          ),
       trialStartedAt: profile.trial_started_at,
       trialEndsAt,
       paidAt: c.status === 'paying' || c.status === 'churned' ? sub?.paid_at ?? null : null,
+      cancelledAt: c.status === 'churned' ? sub?.updated_at ?? null : null,
       paymentType: sub?.payment_type ?? null,
       status: c.status,
       interval: c.interval,

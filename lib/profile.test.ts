@@ -20,9 +20,12 @@ function user(overrides: Partial<UserRecord>): UserRecord {
     parentName: null,
     parentEmail: null,
     signupDate: '2026-08-17T10:00:00',
+    lastSignInAt: null,
+    fakeReason: null,
     trialStartedAt: '2026-08-17T10:00:00',
     trialEndsAt: '2026-08-24T10:00:00',
     paidAt: '2026-08-24T10:00:00',
+    cancelledAt: null,
     paymentType: 'monthly_29_99',
     status: 'paying',
     interval: 'monthly',
@@ -69,6 +72,27 @@ const dossier: UserDossier = {
     schoolsRespondedCount: 2,
     offersCount: 0,
     highlightVideoUrl: null,
+    sport: 'Mens Soccer',
+    motivation: "I'm just exploring my options",
+    whyCollegeSoccer: 'Earn a scholarship, Go pro one day',
+    usedOtherServices: 'No',
+    heardAboutUs: 'tiktok',
+    birthday: '2009-03-14',
+    recruitingClarity: 'I have a rough idea',
+    hasEmailedCoaches: 'Yes',
+    outreachChallenge: "I don't know which coaches to email",
+    highlightVideosCount: 1,
+    highlightChallenge: 'Editing takes forever',
+    weeklyTimeAvailable: '1-3 hours a week',
+    recruitingStressLevel: 'Pretty stressed',
+    educationLevel: 'High school',
+    collegeName: null,
+    schoolSizePreference: 'Large',
+    settingPreference: 'College town',
+    priorityRankings: ['Academics', 'Highest Level Possible', 'Scholarships / Financial Aid'],
+    proAspiration: 'Going pro',
+    naiaJucoPathInterest: 'Yes',
+    parentInviteChoice: 'No',
   },
   stats: {
     emailsSent: 42,
@@ -90,8 +114,8 @@ const dossier: UserDossier = {
     { id: 'e3', coachName: null, coachEmail: 'coach@utd.edu', schoolName: 'UT Dallas', subject: 'Hello', sentAt: '2026-09-02T10:00:00', opened: false, openCount: 0, replied: false },
   ],
   replies: [
-    { id: 'e1', coachName: 'Coach Alvarez', coachEmail: 'alvarez@rice.edu', schoolName: 'Rice University', subject: 'Maya Okafor — 2027 CM interested in Rice', repliedAt: '2026-09-07T10:00:00', preview: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October." },
-    { id: 'e2', coachName: 'Coach Whitman', coachEmail: 'whitman@smu.edu', schoolName: 'SMU', subject: 'Maya Okafor — 2027 CM interested in SMU', repliedAt: '2026-09-04T10:00:00', preview: null },
+    { id: 'e1', coachName: 'Luis Alvarez', coachEmail: 'alvarez@rice.edu', schoolName: 'Rice University', subject: 'Maya Okafor — 2027 CM interested in Rice', sentAt: '2026-09-04T10:00:00', repliedAt: '2026-09-07T10:00:00', preview: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.", outreachBody: 'Hi Coach Alvarez,\n\nI am a 2027 CM at Solar SC.', replyBody: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.\n\nBest,\nLuis" },
+    { id: 'e2', coachName: 'Coach Whitman', coachEmail: 'whitman@smu.edu', schoolName: 'SMU', subject: 'Maya Okafor — 2027 CM interested in SMU', sentAt: '2026-09-01T10:00:00', repliedAt: '2026-09-04T10:00:00', preview: null, outreachBody: null, replyBody: null },
   ],
   topViewers: [],
   calls: [],
@@ -130,17 +154,41 @@ test('paying athlete', () => {
     sentAt: '2026-09-04T10:00:00',
     repliedAt: '2026-09-07T10:00:00',
     snippet: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.",
+    outreachBody: 'Hi Coach Alvarez,\n\nI am a 2027 CM at Solar SC.',
+    replyBody: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.\n\nBest,\nLuis",
   });
+  assert.equal(p.replies[1].coach, 'Coach Whitman', 'does not double the Coach prefix');
   assert.equal(p.replies[1].snippet, 'Maya Okafor — 2027 CM interested in SMU', 'falls back to the subject when no reply body');
+
+  const thread = buildThread(p.replies[0]);
+  assert.equal(thread[0].from, 'athlete');
+  assert.equal(thread[0].text, 'Hi Coach Alvarez,\n\nI am a 2027 CM at Solar SC.');
+  assert.equal(thread[1].from, 'coach');
+  assert.equal(thread[1].text, p.replies[0].replyBody);
+  assert.equal(buildThread(p.replies[1])[0].text, 'Maya Okafor — 2027 CM interested in SMU', 'subject stands in when the outreach body is missing');
 
   assert.deepEqual(p.background.map(c => c.key), ['basic', 'checkin', 'academic', 'athletic', 'goals']);
   assert.deepEqual(p.background.map(c => c.label), ['Your background', "Where you're at", 'Your academics', 'Your game', 'Your goals']);
   const rows = Object.fromEntries(p.background.flatMap(c => c.rows));
   assert.equal(rows['Hometown'], 'Plano, TX');
   assert.equal(rows['Phone'], '+1 (214) 555-0142');
-  assert.equal(rows['Motivation'], '—');
+  assert.equal(rows['Program'], "Men's soccer");
+  assert.equal(rows['Motivation'], 'Exploring options');
+  assert.equal(rows['Why college soccer'], 'Scholarship · Go pro');
+  assert.equal(rows['Heard about us'], 'Tiktok');
+  assert.equal(rows['Birthday'], 'Mar 14, 2009');
   assert.equal(rows['Recruiting status'], 'Emailed a few');
+  assert.equal(rows['Knows next step'], 'Somewhat');
   assert.equal(rows['Emailed coaches'], 'Yes');
+  assert.equal(rows['Biggest email blocker'], 'Finding the right coaches');
+  assert.equal(rows['Highlight videos'], '1');
+  assert.equal(rows['Time per week'], '1–3 hours');
+  assert.equal(rows['How recruiting feels'], 'Stressful');
+  assert.equal(rows['Level'], 'High school');
+  assert.equal(rows['School size'], 'Large (15k+)');
+  assert.equal(rows['Top 3 priorities'], 'Academics · Level of play · Scholarship');
+  assert.equal(rows['Going pro?'], 'Yes, going pro');
+  assert.equal(rows['Community College path'], 'Open to it');
   assert.equal(rows['Coaches emailed'], '12');
   assert.equal(rows['School'], 'Plano West HS');
   assert.equal(rows['Grade next year'], '12th');
@@ -165,6 +213,7 @@ test('trialing athlete with nothing yet', () => {
     paymentType: 'yearly_240_trial',
     interval: 'annual',
     paidAt: null,
+    cancelledAt: null,
     trialStartedAt: '2026-09-02T02:00:00',
     trialEndsAt: '2026-09-09T02:00:00',
   });
@@ -195,6 +244,7 @@ test('parent', () => {
     paymentType: null,
     interval: 'unknown',
     paidAt: null,
+    cancelledAt: null,
     trialStartedAt: null,
     trialEndsAt: null,
     isParent: true,
@@ -212,7 +262,7 @@ test('parent', () => {
 });
 
 test('other statuses', () => {
-  assert.deepEqual(buildProfile(user({ status: 'churned', paymentType: 'canceled', interval: 'unknown' }), null, NOW).planFact, ['Full plan · cancelled', 'Cancelled']);
+  assert.deepEqual(buildProfile(user({ status: 'churned', paymentType: 'canceled', interval: 'unknown', cancelledAt: '2026-09-05T10:00:00' }), null, NOW).planFact, ['Full plan · cancelled', 'Cancelled 3d ago']);
   assert.deepEqual(buildProfile(user({ status: 'trial_ended', paymentType: 'trial_expired', interval: 'unknown', paidAt: null, trialEndsAt: '2026-09-02T10:00:00' }), null, NOW).planFact, ['Full plan · trial', 'Trial ended 6d ago']);
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'in_progress', onboardingStepId: 'gpa' }), null, NOW).planFact, ['No plan', 'In onboarding · gpa']);
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'completed' }), null, NOW).planFact, ['No plan', 'Stopped at paywall']);
@@ -229,7 +279,7 @@ test('relative dates and thread', () => {
   const p = buildProfile(user({}), dossier, NOW);
   const thread = buildThread(p.replies[0]);
   assert.deepEqual(thread, [
-    { from: 'athlete', text: 'Maya Okafor — 2027 CM interested in Rice', at: '2026-09-04T10:00:00' },
-    { from: 'coach', text: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.", at: '2026-09-07T10:00:00' },
+    { from: 'athlete', text: 'Hi Coach Alvarez,\n\nI am a 2027 CM at Solar SC.', at: '2026-09-04T10:00:00' },
+    { from: 'coach', text: "Thanks for reaching out, Maya. We'd love to see you at our ID camp in October.\n\nBest,\nLuis", at: '2026-09-07T10:00:00' },
   ]);
 });

@@ -83,8 +83,7 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
   const chapter = profile.background.find(c => c.key === chap) ?? profile.background[0];
 
   if (user.isParent) {
-    // TODO(handoff-3): read auth last_sign_in_at. UserRecord has no session data, so any onboarding activity stands in for "opened the app".
-    const active = user.onboarding !== 'none';
+    const active = Boolean(user.lastSignInAt);
     return (
       <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px 64px', fontFamily: 'var(--font-sans)' }}>
         <SubHeader title={user.name} onBack={pop} />
@@ -135,6 +134,7 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
         <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <StatusBadge status={user.status} />
           {user.excludedFromMetrics && <Tag kind="soft">Internal</Tag>}
+          {user.fakeReason && <Tag kind="soft">Likely fake · {user.fakeReason}</Tag>}
         </div>
         <Card padding="wide" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, paddingBottom: 12 }}>
           <Fact label="Plan" value={profile.planFact[0]} />

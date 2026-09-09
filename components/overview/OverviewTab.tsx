@@ -10,11 +10,11 @@ import { InkBars } from '@/components/charts/InkBars';
 import { formatUsd } from '@/lib/stripe-revenue';
 import type { Bucket, Totals } from '@/lib/overview';
 import type { UserRecord } from '@/lib/types';
+import type { UsageSnapshot } from '@/lib/usage';
 import { Hero } from './Hero';
 import { Mini } from './Mini';
 import { MiniToggle } from './MiniToggle';
 import { UsageBar } from './UsageBar';
-import { SAMPLE_PLATFORM, SAMPLE_USAGE } from './sampleUsage';
 
 type View = 'revenue' | 'growth' | 'usage';
 type Grain = 'weeks' | 'months';
@@ -24,12 +24,13 @@ export interface OverviewTabProps {
   weeks: Bucket[];
   totals: Totals;
   real: UserRecord[];
+  usage: UsageSnapshot;
   push: (s: Screen) => void;
 }
 
 const pct = (num: number, den: number) => (den ? Math.round(num / den * 1000) / 10 : 0) + '%';
 
-export function OverviewTab({ months, weeks, totals }: OverviewTabProps) {
+export function OverviewTab({ months, weeks, totals, usage }: OverviewTabProps) {
   const [view, setView] = useState<View>('revenue');
   const [grain, setGrain] = useState<Grain>('months');
   const [sel, setSel] = useState<number | null>(null);
@@ -37,7 +38,7 @@ export function OverviewTab({ months, weeks, totals }: OverviewTabProps) {
   const T = totals;
   useEffect(() => setSel(null), [grain, view]);
   const picked = sel != null ? buckets[sel] : null;
-  const usage = [...SAMPLE_USAGE].sort((a, b) => b.events30 - a.events30), maxU = usage[0].events30;
+  const features = usage.features, maxU = features[0]?.events30 ?? 1, P = usage.platform;
   const bestMonth = months.reduce((best, m) => (m.revenue > best.revenue ? m : best), months[0]);
   const head = (title: string) => <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><SectionHeading style={{ marginBottom: 0 }}>{title}</SectionHeading><MiniToggle<Grain> value={grain} onChange={setGrain} options={[['weeks', 'Weeks'], ['months', 'Months']]} /></div>;
   const g3 = { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 };
@@ -73,22 +74,20 @@ export function OverviewTab({ months, weeks, totals }: OverviewTabProps) {
           </div>
         </div>}
         {view === 'usage' && <div style={{ display: 'grid', gap: 12 }}>
-          <Hero label="Feature events · 30 days" value={SAMPLE_USAGE.reduce((s, f) => s + f.events30, 0)} caption={Math.max(...SAMPLE_USAGE.map(f => f.users30)) + ' active users · ' + SAMPLE_USAGE.length + ' features tracked'} />
+          <Hero label="Feature events · 30 days" value={features.reduce((s, f) => s + f.events30, 0)} caption={usage.activeUsers30 + ' active users · ' + features.length + ' features tracked'} />
           <Card padding="wide" style={{ paddingTop: 6, paddingBottom: 6 }}>
-            {/* TODO(handoff-3): push UsageScreen focused on f.id */}
-            {usage.slice(0, 6).map(f => <UsageBar key={f.id} f={f} max={maxU} onClick={() => {}} />)}
-            {/* TODO(handoff-3): push UsageScreen */}
-            <button type="button" onClick={() => {}} style={{ display: 'block', width: '100%', padding: '10px 0 6px', background: 'none', border: 0, borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', font: '600 13px/1.3 var(--font-sans)', color: 'var(--ink-600)', textAlign: 'left' }}>Full breakdown ›</button>
+            {features.length === 0 && <p style={{ margin: 0, padding: '10px 0', font: '400 13px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>No feature events in the last 30 days.</p>}
+            {features.slice(0, 6).map(f => <UsageBar key={f.id} f={f} max={maxU} />)}
           </Card>
           <div>
-            <SectionHeading><span style={{ display: 'inline-flex', alignItems: 'center' }}>On Inkbound · all time<span style={{ font: '600 10px/1.4 var(--font-sans)', padding: '2px 8px', borderRadius: 9999, background: 'var(--gray-100)', color: 'var(--text-secondary)', marginLeft: 8, textTransform: 'none', letterSpacing: 'normal' }}>Sample data</span></span></SectionHeading>
+            <SectionHeading>On Inkbound · all time</SectionHeading>
             <div style={g3}>
-              <Mini label="Coach convos" value={SAMPLE_PLATFORM.conversations} sub={SAMPLE_PLATFORM.replies + ' replies'} accent />
-              <Mini label="Highlight vids" value={SAMPLE_PLATFORM.videos} sub={SAMPLE_PLATFORM.videosPublished + ' published'} />
-              <Mini label="Emails opened" value={SAMPLE_PLATFORM.emailsOpened.toLocaleString()} sub={Math.round(SAMPLE_PLATFORM.emailsOpened / SAMPLE_PLATFORM.emailsSent * 100) + '% of ' + SAMPLE_PLATFORM.emailsSent.toLocaleString()} />
-              <Mini label="Campaigns" value={SAMPLE_PLATFORM.campaigns} sub="sent to coaches" />
-              <Mini label="Schools saved" value={SAMPLE_PLATFORM.schoolsSaved.toLocaleString()} sub="in search" />
-              <Mini label="Calls booked" value={SAMPLE_PLATFORM.calls} sub="with Elan" />
+              <Mini label="Coach convos" value={P.conversations} sub={P.replies + ' replies'} accent />
+              <Mini label="Highlight vids" value={P.videos} sub={P.videosPublished + ' published'} />
+              <Mini label="Emails opened" value={P.emailsOpened.toLocaleString()} sub={(P.emailsSent ? Math.round(P.emailsOpened / P.emailsSent * 100) : 0) + '% of ' + P.emailsSent.toLocaleString()} />
+              <Mini label="Campaigns" value={P.campaigns} sub="sent to coaches" />
+              <Mini label="Schools saved" value={P.schoolsSaved.toLocaleString()} sub="in search" />
+              <Mini label="Calls booked" value={P.calls} sub="with Elan" />
             </div>
           </div>
         </div>}

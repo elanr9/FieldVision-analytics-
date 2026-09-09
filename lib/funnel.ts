@@ -156,7 +156,7 @@ function isWithin(iso: string | null, range: DateRange): boolean {
 
 /** Real athletes only: drops internal, fake-flagged and parent accounts. */
 export function includedUsers(users: UserRecord[]): UserRecord[] {
-  return users.filter(u => !u.excludedFromMetrics && !u.isParent);
+  return users.filter(u => !u.excludedFromMetrics && !u.isParent && !u.fakeReason);
 }
 
 /** Distinct users per screen, counting a view or an answer on that screen. */

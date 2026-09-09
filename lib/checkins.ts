@@ -61,7 +61,7 @@ export function lastSentAt(userId: string, log: CheckinLogRow[]): string | null 
 export function checkinsDue(users: UserRecord[], log: CheckinLogRow[], now: Date = new Date()): UserRecord[] {
   return users.filter(u => {
     if (u.status !== 'paying' && u.status !== 'trialing') return false;
-    if (!u.phone || u.excludedFromMetrics) return false;
+    if (!u.phone || u.excludedFromMetrics || u.fakeReason) return false;
     const last = lastSentAt(u.id, log);
     return last === null || now.getTime() - new Date(last).getTime() >= WEEK_MS;
   });
