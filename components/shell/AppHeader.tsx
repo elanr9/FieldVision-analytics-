@@ -38,7 +38,7 @@ export function AppHeader({ stats, onStat, tab, onTab, badge }: AppHeaderProps) 
           {stats.map(s => <HeaderStat key={s.key} label={s.label} value={<CountUp value={s.value} />} accent={s.accent} active onClick={() => onStat(s)} />)}
         </div>
       </div>
-      <Tabs style={{ marginTop: 10, paddingBottom: 8 }} value={tab} onChange={onTab} tabs={TABS} />
+      <Tabs style={{ marginTop: 10, marginInline: -16, padding: '6px 16px 8px' }} value={tab} onChange={onTab} tabs={TABS} />
     </header>
   );
 }
