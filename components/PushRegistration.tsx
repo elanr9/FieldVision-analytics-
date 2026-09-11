@@ -42,14 +42,23 @@ interface CapacitorGlobal {
   Plugins?: { PushNotifications?: PushNotificationsPlugin };
 }
 
-export function openUserFromPush(userId: string) {
-  window.location.assign(`/?user=${encodeURIComponent(userId)}`);
+export function openUserFromPush(userId: string, focus?: string) {
+  const q = new URLSearchParams({ user: userId });
+  if (focus) q.set('focus', focus);
+  window.location.assign('/?' + q.toString());
+}
+
+function pushFocus(data: Record<string, string> | undefined): string | undefined {
+  if (data?.focus) return data.focus;
+  if (data?.eventType === 'call' || data?.eventType === 'call_soon') return 'call';
+  return undefined;
 }
 
 interface Banner {
   title: string;
   body: string;
   userId?: string;
+  focus?: string;
 }
 
 /**
@@ -73,7 +82,7 @@ export default function PushRegistration() {
       const title = notification.title ?? 'FieldVision';
       const body = notification.body ?? '';
       const userId = notification.data?.userId;
-      setBanner({ title, body, userId });
+      setBanner({ title, body, userId, focus: pushFocus(notification.data) });
       window.setTimeout(() => {
         setBanner(current => (current?.title === title && current.body === body ? null : current));
       }, 6000);
@@ -81,7 +90,7 @@ export default function PushRegistration() {
 
     const handleOpen = (notification: PushNotification) => {
       const userId = notification.data?.userId;
-      if (userId) openUserFromPush(userId);
+      if (userId) openUserFromPush(userId, pushFocus(notification.data));
     };
 
     void (async () => {
@@ -128,7 +137,7 @@ export default function PushRegistration() {
     <button
       type="button"
       onClick={() => {
-        if (banner.userId) openUserFromPush(banner.userId);
+        if (banner.userId) openUserFromPush(banner.userId, banner.focus);
         setBanner(null);
       }}
       className="fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[100] rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-left shadow-lg active:scale-[0.99]"

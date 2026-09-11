@@ -206,9 +206,15 @@ function videoEvent(record: Row): FounderEvent | null {
 }
 
 function callEvent(record: Row): FounderEvent | null {
-  const userId = str(record.user_id);
+  const userId = str(record.user_id) ?? str(record.student_user_id);
   if (!userId) return null;
-  return { type: 'call', userId, vars: { slot: callSlot(record.scheduled_at) } };
+  return { type: 'call', userId, vars: { slot: callSlot(record.scheduled_at ?? record.start_at) } };
+}
+
+function upcomingCallEvent(record: Row): FounderEvent | null {
+  const userId = str(record.user_id) ?? str(record.student_user_id);
+  if (!userId) return null;
+  return { type: 'call_soon', userId, vars: { slot: callSlot(record.scheduled_at ?? record.start_at) }, dedupeMinutes: 20 };
 }
 
 function stalledEvent(record: Row): FounderEvent | null {
@@ -234,6 +240,8 @@ async function resolveEvent(supabase: SupabaseClient, payload: WebhookPayload): 
       return videoEvent(record);
     case 'founder_calls':
       return callEvent(record);
+    case 'upcoming_calls':
+      return upcomingCallEvent(record);
     default:
       return null;
   }
@@ -312,7 +320,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await sendPushToAll(copy.title, copy.sub ?? fullName ?? '', { eventType: event.type, userId: event.userId });
+    const focusCall = event.type === 'call' || event.type === 'call_soon';
+    await sendPushToAll(copy.title, copy.sub ?? fullName ?? '', {
+      eventType: event.type,
+      userId: event.userId,
+      ...(focusCall ? { focus: 'call' } : {}),
+    });
   } catch (err) {
     console.error('Push send failed', err);
     return NextResponse.json({ error: 'Push send failed' }, { status: 500 });

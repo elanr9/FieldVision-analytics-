@@ -21,7 +21,7 @@ const NOTIF_GROUPS: Record<KindKey, NotificationType[] | null> = {
   all: null,
   money: ['paid', 'trial', 'cancel', 'save'],
   paywall: ['paywall', 'wheel', 'stalled'],
-  coaches: ['reply', 'campaign', 'video', 'call'],
+  coaches: ['reply', 'campaign', 'video', 'call', 'call_soon'],
 };
 
 const DAY: Record<DayKey, (minsAgo: number) => boolean> = {
@@ -53,9 +53,9 @@ export function ActivityTab({ users, notifications, checkinLog: log, onSent }: A
   const nav = useNav();
 
   const byId = new Map(users.map(u => [u.id, u]));
-  const openProfile = (userId: string) => {
+  const openProfile = (userId: string, focusCall = false) => {
     const user = byId.get(userId);
-    if (user) nav.open(user);
+    if (user) nav.open(user, { focusCall });
   };
 
   const due = checkinsDue(users, log, new Date(now));
@@ -82,7 +82,7 @@ export function ActivityTab({ users, notifications, checkinLog: log, onSent }: A
           </div>
           <Card padding="none">
             {pager.slice.length === 0 ? <p style={EMPTY_STYLE}>Nothing here.</p> :
-              pager.slice.map((n, i) => <div key={n.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><NotifRow n={n} now={now} onOpen={() => openProfile(n.userId)} /></div>)}
+              pager.slice.map((n, i) => <div key={n.id} style={{ borderTop: i ? '1px solid var(--border-subtle)' : 0 }}><NotifRow n={n} now={now} onOpen={() => openProfile(n.userId, n.type === 'call' || n.type === 'call_soon')} /></div>)}
             {pager.footer}
           </Card>
         </div>}

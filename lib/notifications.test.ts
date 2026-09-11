@@ -51,6 +51,10 @@ test('call', () => {
   assert.deepEqual(buildNotificationCopy('call', { first: 'Maya', slot: 'Thu 4:30pm' }), { title: 'Maya booked a call with Elan', sub: 'Thu 4:30pm' });
 });
 
+test('call_soon', () => {
+  assert.deepEqual(buildNotificationCopy('call_soon', { first: 'Maya', slot: 'Thu 4:30pm' }), { title: 'Call with Maya in 10 minutes', sub: 'Thu 4:30pm' });
+});
+
 test('every type has a dot token', () => {
   for (const t of NOTIFICATION_TYPES) assert.match(NOTIF_DOT[t], /^var\(--[a-z]+-\d{3}\)$/);
   assert.equal(NOTIF_DOT.paywall, 'var(--violet-500)');

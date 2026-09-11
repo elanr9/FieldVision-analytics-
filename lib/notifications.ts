@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
  *   paid      user_subscriptions plan=full with amount_cents > 0
  *   cancel    user_subscriptions plan=full -> free/canceled
  *   call      founder_calls insert
+ *   call_soon pg_cron analytics_check_upcoming_calls(), 10 min before a booked call
  *   paywall   product_events onboarding_screen_view s37_paywall
  *   wheel     product_events onboarding_screen_view s37c_spin_wheel or s38_one_time_offer
  *   stalled   pg_cron analytics_check_paywall_stalls(), paywall view with 10 min of nothing after it
@@ -29,10 +30,11 @@ export type NotificationType =
   | 'reply'
   | 'campaign'
   | 'video'
-  | 'call';
+  | 'call'
+  | 'call_soon';
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
-  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'save', 'reply', 'campaign', 'video', 'call',
+  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'save', 'reply', 'campaign', 'video', 'call', 'call_soon',
 ];
 
 /**
@@ -45,7 +47,7 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
  *   school, coach (reply)
  *   n, m (campaign)        coaches and schools counts
  *   videoTitle (video)
- *   slot (call)            e.g. "Thu 4:30pm"
+ *   slot (call, call_soon) e.g. "Thu 4:30pm"
  */
 export type NotificationVars = Record<string, string | number | null | undefined>;
 
@@ -63,6 +65,7 @@ export const NOTIF_DOT: Record<NotificationType, string> = {
   campaign: 'var(--ink-500)',
   video: 'var(--ink-500)',
   call: 'var(--ink-700)',
+  call_soon: 'var(--green-600)',
 };
 
 export interface NotificationRow {
@@ -145,6 +148,8 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
       return { title: `${first} just made a highlight video`, sub: text(vars.videoTitle) };
     case 'call':
       return { title: `${first} booked a call with Elan`, sub: text(vars.slot) };
+    case 'call_soon':
+      return { title: `Call with ${first} in 10 minutes`, sub: text(vars.slot) };
   }
 }
 

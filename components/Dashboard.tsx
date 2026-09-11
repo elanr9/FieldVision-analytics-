@@ -85,7 +85,8 @@ export default function Dashboard({
     const userId = params.get('user');
     if (!userId) return;
     const user = users.find(u => u.id === userId);
-    if (user) push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} /> });
+    const focusCall = params.get('focus') === 'call';
+    if (user) push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} focusCall={focusCall} /> });
     window.history.replaceState(null, '', window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

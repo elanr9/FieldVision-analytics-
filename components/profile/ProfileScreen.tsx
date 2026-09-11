@@ -21,7 +21,7 @@ import { lastSentAt } from '@/lib/checkins';
 import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileReply, type ProfileVideo } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 
-export interface ProfileScreenProps { user: UserRecord }
+export interface ProfileScreenProps { user: UserRecord; focusCall?: boolean }
 
 type Section = 'background' | 'videos' | 'replies';
 
@@ -69,7 +69,7 @@ function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null
   return users.find(u => !u.isParent && u.parentEmail?.toLowerCase() === email) ?? null;
 }
 
-export function ProfileScreen({ user }: ProfileScreenProps) {
+export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
   const { push, pop, open, users, checkinLog, onCheckinSent } = useNav();
   const athlete = user.isParent ? findAthlete(user, users) : null;
   const { dossier, loading } = useDossier(user.isParent ? athlete?.id ?? null : user.id);
@@ -98,7 +98,7 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
             <Fact label="Joined" value={formatShortDay(user.signupDate)} />
             <Fact label="Invited by" value={athlete ? athlete.name.split(' ')[0] + ' · onboarding' : '—'} />
           </Card>
-          <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" /></div>
+          <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" emphasize={focusCall ? 'call' : undefined} /></div>
           <SectionHeading style={{ marginTop: 28 }}>Their athlete</SectionHeading>
           {athlete ? (
             <Card interactive padding="wide" onClick={() => open(athlete)} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 12 }}>
@@ -142,7 +142,7 @@ export function ProfileScreen({ user }: ProfileScreenProps) {
           {profile.facts && <Fact label="Team · position · grad" value={profile.facts} />}
           {profile.checkinEligible && <Fact label="Last check-in" value={profile.lastCheckin} />}
         </Card>
-        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" onText={profile.checkinEligible ? () => setTexting(true) : undefined} /></div>
+        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" emphasize={focusCall ? 'call' : undefined} onText={profile.checkinEligible ? () => setTexting(true) : undefined} /></div>
         <CheckinSheet user={texting ? user : null} checkinLog={checkinLog} onClose={() => setTexting(false)} onSent={onCheckinSent} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 10 }}>
           <StatBlock label="Emails" value={<CountUp value={profile.stats.emails} />} />

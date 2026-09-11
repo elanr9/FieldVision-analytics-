@@ -18,13 +18,13 @@ export interface NavContextValue {
 
 export interface Nav extends NavContextValue {
   /** Pushes the person's profile (athlete or parent layout) */
-  open: (user: UserRecord) => void;
+  open: (user: UserRecord, opts?: { focusCall?: boolean }) => void;
 }
 
 export const NavContext = createContext<NavContextValue>({ push: () => {}, pop: () => {}, users: [], checkinLog: [], onCheckinSent: () => {} });
 
 export function useNav(): Nav {
   const ctx = useContext(NavContext);
-  const open = (user: UserRecord) => ctx.push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} /> });
+  const open = (user: UserRecord, opts?: { focusCall?: boolean }) => ctx.push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} focusCall={opts?.focusCall} /> });
   return { ...ctx, open };
 }
