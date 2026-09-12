@@ -76,14 +76,7 @@ begin
 end;
 $$;
 
-select cron.unschedule('analytics-upcoming-calls')
-where exists (select 1 from cron.job where jobname = 'analytics-upcoming-calls');
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'analytics-upcoming-calls';
 select cron.schedule('analytics-upcoming-calls', '* * * * *', 'select public.analytics_check_upcoming_calls();');
-
-do $$
-begin
-  if to_regclass('public.founder_calls') is not null then
-    execute 'drop trigger if exists analytics_notify_call on public.founder_calls';
-    execute 'create trigger analytics_notify_call after insert on public.founder_calls for each row execute function public.analytics_notify_event()';
-  end if;
-end $$;
