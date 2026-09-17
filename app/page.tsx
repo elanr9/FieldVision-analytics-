@@ -70,5 +70,9 @@ export default async function Home() {
     }),
   ]);
 
-  return <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} />;
+  return (
+    <div className="ink-screen-in">
+      <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} />
+    </div>
+  );
 }

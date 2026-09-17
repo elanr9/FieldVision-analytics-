@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import NativeSplash from '../components/NativeSplash';
 import PushRegistration from '../components/PushRegistration';
 import './globals.css';
 
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <NativeSplash />
         <PushRegistration />
         {children}
       </body>

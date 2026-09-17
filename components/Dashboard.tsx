@@ -7,7 +7,7 @@ import { markCheckinSent } from '@/components/activity/actions';
 import { CalendarTab } from '@/components/calendar/CalendarTab';
 import type { CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord } from '@/lib/notifications';
-import { Fade, ScreenStack, type Screen } from '@/components/motion';
+import { ScreenStack, type Screen } from '@/components/motion';
 import { OnboardingTab } from '@/components/onboarding/OnboardingTab';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
@@ -42,6 +42,12 @@ export default function Dashboard({
   usage: UsageSnapshot;
 }) {
   const [tab, setTab] = useState('overview');
+  /** Tabs stay mounted once opened so switching back is instant instead of re-rendering the whole tree. */
+  const [mountedTabs, setMountedTabs] = useState<string[]>(['overview']);
+  const onTab = (key: string) => {
+    setMountedTabs(m => (m.includes(key) ? m : [...m, key]));
+    setTab(key);
+  };
   const [stack, setStack] = useState<Screen[]>([]);
   const [popping, setPopping] = useState(false);
   /** Server log plus sends made this session, so check-in rows disappear and counts drop right away. */
@@ -93,17 +99,21 @@ export default function Dashboard({
 
   const onStat = (s: HeaderStatItem) => push({ key: 'people-' + s.key, node: <PeopleScreen title={s.title} users={s.users} /> });
 
+  const tabPanels = [
+    { key: 'overview', node: <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} usage={usage} push={push} /> },
+    { key: 'activity', node: <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} /> },
+    { key: 'onboarding', node: <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} /> },
+    { key: 'users', node: <UsersTab users={accounts} /> },
+    { key: 'calendar', node: <CalendarTab users={accounts} /> },
+  ];
+
   const root = (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px calc(var(--safe-bottom) + 64px)', fontFamily: 'var(--font-sans)' }}>
-      <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={setTab} badge={countToday(notifications)} />
+      <AppHeader stats={stats} onStat={onStat} tab={tab} onTab={onTab} badge={countToday(notifications)} />
       <div style={{ paddingTop: 16 }}>
-        <Fade id={tab}>
-          {tab === 'overview' && <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} usage={usage} push={push} />}
-          {tab === 'activity' && <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} />}
-          {tab === 'onboarding' && <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} />}
-          {tab === 'users' && <UsersTab users={accounts} />}
-          {tab === 'calendar' && <CalendarTab users={accounts} />}
-        </Fade>
+        {tabPanels.map(p => mountedTabs.includes(p.key) && (
+          <div key={p.key} className={tab === p.key ? 'ink-tab-panel is-active' : 'ink-tab-panel'}>{p.node}</div>
+        ))}
       </div>
     </main>
   );
