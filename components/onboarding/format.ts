@@ -22,7 +22,7 @@ export function sharePct(num: number | null, den: number | null): string {
 /** How to describe the `started` cohort in captions, by how it was measured. */
 export const STARTED_NOUN: Record<StartedSource, string> = {
   welcome_screen: 'who started',
-  accounts_created: 'accounts created',
+  accounts_created: 'who entered onboarding',
 };
 
 export const UNTRACKED_NOTE = 'screens before sign-in are not tracked yet';

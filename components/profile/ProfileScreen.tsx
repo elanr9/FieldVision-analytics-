@@ -4,6 +4,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { CountUp, Fade, usePager } from '@/components/motion';
 import { Mini } from '@/components/overview/Mini';
 import { MiniToggle } from '@/components/overview/MiniToggle';
+import { CampaignScreen } from '@/components/profile/CampaignScreen';
 import { ConversationScreen } from '@/components/profile/ConversationScreen';
 import { CheckinSheet } from '@/components/activity/CheckinSheet';
 import { useDossier } from '@/components/profile/useDossier';
@@ -18,12 +19,12 @@ import { StatBlock } from '@/components/ui/StatBlock';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Tag } from '@/components/ui/Tag';
 import { lastSentAt } from '@/lib/checkins';
-import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileReply, type ProfileVideo } from '@/lib/profile';
+import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileCampaign, type ProfileReply, type ProfileVideo } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 
 export interface ProfileScreenProps { user: UserRecord; focusCall?: boolean }
 
-type Section = 'background' | 'videos' | 'replies';
+type Section = 'background' | 'videos' | 'replies' | 'campaigns';
 
 const CHAPTERS: [BackgroundChapterKey, string][] = [['basic', 'Background'], ['checkin', 'Where'], ['academic', 'Academics'], ['athletic', 'Game'], ['goals', 'Goals']];
 
@@ -62,6 +63,22 @@ function ReplyRow({ reply, first, onOpen }: { reply: ProfileReply; first: boolea
   );
 }
 
+function CampaignRow({ campaign, first, onOpen }: { campaign: ProfileCampaign; first: boolean; onOpen: () => void }) {
+  const { counts } = campaign;
+  const summary = campaign.sent
+    ? `${counts.schools} schools · ${counts.opened} opened · ${counts.replied} replied · ${counts.watched} watched`
+    : campaign.status;
+  return (
+    <button type="button" onClick={onOpen} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', padding: '12px 16px', borderTop: first ? 0 : '1px solid var(--border-subtle)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <p style={{ margin: 0, font: '600 14px/1.4 var(--font-sans)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campaign.name}</p>
+        <span style={{ font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{formatShortDay(campaign.at)} · {formatAgo(campaign.at)} ›</span>
+      </div>
+      <p style={{ margin: '4px 0 0', font: '400 13px/1.5 var(--font-sans)', color: 'var(--gray-700)' }}>{summary}</p>
+    </button>
+  );
+}
+
 /** The athlete who invited this parent: parent_invites.player_user_id maps to the athlete's parentEmail. */
 function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null {
   const email = parent.email.toLowerCase();
@@ -80,6 +97,7 @@ export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
   const [chap, setChap] = useState<BackgroundChapterKey>('basic');
   const videos = usePager(profile.videos, 3);
   const replies = usePager(profile.replies, 3);
+  const campaigns = usePager(profile.campaigns, 4);
   const chapter = profile.background.find(c => c.key === chap) ?? profile.background[0];
 
   if (user.isParent) {
@@ -150,7 +168,7 @@ export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
           <StatBlock label="HL views" value={<CountUp value={profile.stats.views} />} />
           <StatBlock label="Calls" value={<CountUp value={profile.stats.calls} />} />
         </div>
-        <SegmentedControl style={{ marginTop: 12, marginBottom: 10 }} value={sec} onChange={k => setSec(k as Section)} options={[{ key: 'background', label: 'Background' }, { key: 'videos', label: 'Videos · ' + profile.videos.length }, { key: 'replies', label: 'Replies · ' + profile.replies.length }]} />
+        <SegmentedControl style={{ marginTop: 12, marginBottom: 10 }} value={sec} onChange={k => setSec(k as Section)} options={[{ key: 'background', label: 'Background' }, { key: 'videos', label: 'Videos · ' + profile.videos.length }, { key: 'replies', label: 'Replies · ' + profile.replies.length }, { key: 'campaigns', label: 'Campaigns · ' + profile.campaigns.length }]} />
         <Fade id={sec + chap}>
           {sec === 'background' && (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -175,6 +193,12 @@ export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
             <Card padding="none" style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both' }}>
               {replies.slice.map((r, i) => <ReplyRow key={r.id} reply={r} first={i === 0} onOpen={() => push({ key: 'convo-' + r.id, node: <ConversationScreen user={user} reply={r} /> })} />)}
               {replies.footer}
+            </Card>
+          ))}
+          {sec === 'campaigns' && (loading ? <Skeleton height={72} radius={12} /> : profile.campaigns.length === 0 ? <p style={EMPTY_TEXT}>No campaigns yet.</p> : (
+            <Card padding="none" style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both' }}>
+              {campaigns.slice.map((c, i) => <CampaignRow key={c.id} campaign={c} first={i === 0} onOpen={() => push({ key: 'campaign-' + c.id, node: <CampaignScreen user={user} campaign={c} /> })} />)}
+              {campaigns.footer}
             </Card>
           ))}
         </Fade>

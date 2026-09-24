@@ -15,8 +15,10 @@ test('stalled', () => {
   assert.deepEqual(buildNotificationCopy('stalled', { first: 'Jalen' }), { title: 'Jalen stopped at paywall', sub: '10 min without action' });
 });
 
-test('trial', () => {
-  assert.deepEqual(buildNotificationCopy('trial', { first: 'Lucas', plan: '$60 semester' }), { title: 'Lucas started a 3 day free trial', sub: '$60 semester plan' });
+test('trial uses the real length from Stripe', () => {
+  assert.deepEqual(buildNotificationCopy('trial', { first: 'Lucas', plan: '$60 quarterly', days: 3 }), { title: 'Lucas started a 3 day free trial', sub: '$60 quarterly plan' });
+  assert.equal(buildNotificationCopy('trial', { first: 'Kashiden', plan: '$240 yearly', days: 7 }).title, 'Kashiden started a 7 day free trial');
+  assert.equal(buildNotificationCopy('trial', { first: 'Lucas' }).title, 'Lucas started a free trial');
 });
 
 test('paid', () => {
@@ -28,6 +30,10 @@ test('cancel uses his/her/their', () => {
   assert.deepEqual(buildNotificationCopy('cancel', { first: 'Ethan', pronoun: 'his', plan: '$30 monthly' }), { title: 'Ethan cancelled his subscription', sub: '$30 monthly' });
   assert.equal(buildNotificationCopy('cancel', { first: 'Maya', pronoun: 'her' }).title, 'Maya cancelled her subscription');
   assert.equal(buildNotificationCopy('cancel', { first: 'Sam' }).title, 'Sam cancelled their subscription');
+});
+
+test('payment_failed reads as involuntary churn, not a cancel', () => {
+  assert.deepEqual(buildNotificationCopy('payment_failed', { first: 'Kashiden', plan: '$240 yearly' }), { title: "Kashiden's payment failed, subscription ended", sub: '$240 yearly' });
 });
 
 test('save', () => {
@@ -43,6 +49,11 @@ test('campaign', () => {
   assert.deepEqual(buildNotificationCopy('campaign', { first: 'Caleb', pronoun: 'his', n: 14, m: 6 }), { title: 'Caleb just sent his campaign', sub: '14 coaches · 6 schools' });
 });
 
+test('message names the single school', () => {
+  assert.deepEqual(buildNotificationCopy('message', { first: 'Ricardo', school: 'Dominican University New York' }), { title: 'Ricardo messaged Dominican University New York', sub: null });
+  assert.equal(buildNotificationCopy('message', { first: 'Ricardo' }).title, 'Ricardo messaged a school');
+});
+
 test('video', () => {
   assert.deepEqual(buildNotificationCopy('video', { first: 'Diego', videoTitle: 'Diego Ramos | Highlight Video' }), { title: 'Diego just made a highlight video', sub: 'Diego Ramos | Highlight Video' });
 });
@@ -51,8 +62,10 @@ test('call', () => {
   assert.deepEqual(buildNotificationCopy('call', { first: 'Maya', slot: 'Thu 4:30pm' }), { title: 'Maya booked a call with Elan', sub: 'Thu 4:30pm' });
 });
 
+// These rows are written straight into the table by Postgres, so the copy here has to
+// match analytics_notify_upcoming_call() exactly or the feed shows two different strings.
 test('call_soon', () => {
-  assert.deepEqual(buildNotificationCopy('call_soon', { first: 'Maya', slot: 'Thu 4:30pm' }), { title: 'Call with Maya in 10 minutes', sub: 'Thu 4:30pm' });
+  assert.deepEqual(buildNotificationCopy('call_soon', { first: 'Bastiano', slot: 'Wed 9:00pm' }), { title: 'Call with Bastiano in 10 minutes', sub: 'Wed 9:00pm' });
 });
 
 test('every type has a dot token', () => {

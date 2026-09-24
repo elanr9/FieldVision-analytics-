@@ -74,7 +74,8 @@ const users: UserRecord[] = [
   user('u1', { trialStartedAt: IN_RANGE, paidAt: IN_RANGE, paymentType: 'inkbound_semester' }),
   user('u2', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
   user('u3'),
-  // Account in range but no events: an app build that does not track yet. Counts as started, drops at the first screen.
+  // Account in range with no flow events: signed up by Google or email through the login form and never
+  // saw these screens, so the screen funnel does not count them as having started.
   user('u4'),
   user('u5', { signupDate: BEFORE_RANGE }),
   // Paid in range without a trial in range: counts nowhere in the plan split.
@@ -110,9 +111,9 @@ const by = (id: string): FunnelStep => {
 };
 const drop = (id: string) => [by(id).reached, by(id).pct, by(id).dropped, by(id).dropPct];
 
-test('started falls back to accounts created in range while screens before sign-in are untracked', () => {
+test('started falls back to accounts in range that entered the flow while screens before sign-in are untracked', () => {
   assert.equal(funnel.startedSource, 'accounts_created');
-  assert.equal(funnel.started, 4);
+  assert.equal(funnel.started, 3);
   assert.equal(funnel.untrackedSteps, screenIndex('s31_verify_phone'));
   assert.deepEqual(by('s01_welcome'), {
     id: 's01_welcome',
@@ -130,19 +131,19 @@ test('started falls back to accounts created in range while screens before sign-
 });
 
 test('reached, dropped and dropPct per tracked screen, counting a view or an answer', () => {
-  assert.deepEqual(drop('s31_verify_phone'), [3, 75, 1, 25]);
-  assert.deepEqual(drop('s32_find_home'), [3, 75, 0, 0]);
-  assert.deepEqual(drop('s33_goals'), [2, 50, 1, 33.3]);
-  assert.deepEqual(drop('s34_building_plan'), [2, 50, 0, 0]);
-  assert.deepEqual(drop('s36_try_free'), [1, 25, 1, 50]);
-  assert.deepEqual(drop('s37_paywall'), [1, 25, 0, 0]);
+  assert.deepEqual(drop('s31_verify_phone'), [3, 100, 0, 0]);
+  assert.deepEqual(drop('s32_find_home'), [3, 100, 0, 0]);
+  assert.deepEqual(drop('s33_goals'), [2, 66.7, 1, 33.3]);
+  assert.deepEqual(drop('s34_building_plan'), [2, 66.7, 0, 0]);
+  assert.deepEqual(drop('s36_try_free'), [1, 33.3, 1, 50]);
+  assert.deepEqual(drop('s37_paywall'), [1, 33.3, 0, 0]);
   assert.deepEqual(drop('s37d_parent_invite_sent'), [0, 0, null, null]);
 });
 
 test('conditional screens show reach but never a drop, and do not feed the next drop', () => {
-  assert.deepEqual(drop('s33b_invite_parent'), [1, 25, null, null]);
+  assert.deepEqual(drop('s33b_invite_parent'), [1, 33.3, null, null]);
   assert.equal(by('s33b_invite_parent').conditional, true);
-  assert.deepEqual(drop('s34_building_plan'), [2, 50, 0, 0]);
+  assert.deepEqual(drop('s34_building_plan'), [2, 66.7, 0, 0]);
 });
 
 test('screens the mirror does not know yet are slotted in by id and flagged', () => {
@@ -154,8 +155,11 @@ test('screens the mirror does not know yet are slotted in by id and flagged', ()
 });
 
 test('trial and paid close the funnel from account data', () => {
-  assert.deepEqual(drop(TRIAL_STEP_ID), [2, 50, 0, 0]);
-  assert.deepEqual(drop(SUBSCRIBED_STEP_ID), [1, 25, 1, 50]);
+  // u2 started a trial without a tracked paywall view, so more people trialed than the step before saw:
+  // the earlier step is under-tracked and there is no drop to report, never a negative one.
+  assert.deepEqual(drop(TRIAL_STEP_ID), [2, 66.7, null, null]);
+  assert.deepEqual(drop(SUBSCRIBED_STEP_ID), [1, 33.3, 1, 50]);
+  assert.equal(funnel.trialConverted, 1);
   assert.equal(funnel.steps[funnel.steps.length - 1].id, SUBSCRIBED_STEP_ID);
   assert.equal(funnel.steps.length, DEFS.length + 3);
 });
@@ -164,19 +168,46 @@ test('chapter enter and exit follow the flow sections', () => {
   const chapter = (key: string) => funnel.chapters.find(c => c.key === key);
   assert.deepEqual(funnel.chapters.map(c => c.key), ['welcome', 'progress', 'academics', 'game', 'personal', 'plan', 'paywall']);
   assert.deepEqual([chapter('welcome')?.enter, chapter('welcome')?.exit], [null, null]);
-  assert.deepEqual([chapter('personal')?.enter, chapter('personal')?.exit], [4, 3]);
+  assert.deepEqual([chapter('personal')?.enter, chapter('personal')?.exit], [3, 3]);
   assert.deepEqual([chapter('plan')?.enter, chapter('plan')?.exit, chapter('plan')?.steps.length], [3, 2, 6]);
   assert.deepEqual([chapter('paywall')?.enter, chapter('paywall')?.exit, chapter('paywall')?.short], [2, 1, 'Paywall']);
 });
 
-test('once the apps record the welcome screen, started switches to its viewers and nothing is untracked', () => {
-  const tracked = buildFunnel({ events: [...views('u1', 's01_welcome', 's02_role'), ...views('u2', 's01_welcome'), ...views('u3', 's01_welcome'), ...views('mom', 's01_welcome')], users, range });
+test('once the apps record the screens before sign-in, started switches to welcome viewers', () => {
+  const tracked = buildFunnel({
+    events: [
+      ...walk('u1', 's01_welcome', 's31_verify_phone'),
+      ...walk('u2', 's01_welcome', 's30_about_you'),
+      ...views('u3', 's01_welcome'),
+      ...views('mom', 's01_welcome'),
+    ],
+    users,
+    range,
+  });
   assert.equal(tracked.startedSource, 'welcome_screen');
   assert.equal(tracked.started, 3);
   assert.equal(tracked.untrackedSteps, 0);
   assert.deepEqual([tracked.steps[0].reached, tracked.steps[0].pct], [3, 100]);
-  assert.deepEqual([tracked.steps[1].reached, tracked.steps[1].dropped, tracked.steps[1].dropPct], [1, 2, 66.7]);
-  assert.equal(tracked.steps[2].reached, 0);
+  assert.deepEqual([tracked.steps[1].reached, tracked.steps[1].dropped, tracked.steps[1].dropPct], [2, 1, 33.3]);
+});
+
+// The live failure this guards: two returning users replayed onboarding, put four rows on s01 and s02,
+// and the funnel took them as the whole starting cohort, reporting a 100% cliff at the third screen.
+test('a few stray welcome views do not become the denominator', () => {
+  const stray = buildFunnel({ events: [...events, ...views('u1', 's01_welcome', 's02_role'), ...views('u2', 's01_welcome', 's02_role')], users, range });
+  assert.equal(stray.startedSource, 'accounts_created');
+  assert.equal(stray.started, 3);
+});
+
+test('screens the apps have never emitted stay untracked, a screen they emit reads as a real zero', () => {
+  // What loadSeenScreenIds returns today: the account screen onward, plus an id the mirror lacks.
+  const seenScreens = new Set([...DEFS.slice(screenIndex('s31_verify_phone')).map(d => d.id), 's33c_new_thing']);
+  const honest = buildFunnel({ events, users, range, seenScreens });
+  const step = (id: string) => honest.steps.find(s => s.id === id);
+  assert.equal(step('s01_welcome')?.reached, null);
+  assert.equal(step('s30_about_you')?.reached, null);
+  assert.equal(step('s37d_parent_invite_sent')?.reached, 0);
+  assert.equal(honest.untrackedSteps, screenIndex('s31_verify_phone'));
 });
 
 test('flowScreens merges observed ids into the mirror by numeric prefix and ignores non-flow names', () => {

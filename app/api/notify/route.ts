@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type Stripe from 'stripe';
 import { sendPushToAll } from '@/lib/apns';
+import { stripeClient } from '@/lib/stripe-revenue';
 import {
   buildNotificationCopy,
   pronounFromSport,
@@ -120,28 +122,71 @@ async function onboardingFinishedDaysAgo(supabase: SupabaseClient, userId: strin
   return daysBetween(finishedAt, new Date());
 }
 
-function subscriptionEvent(op: WebhookPayload['op'], record: Row, old: Row | null): FounderEvent | null {
-  const userId = str(record.user_id);
-  if (!userId) return null;
-  const plan = str(record.plan);
-  const amount = num(record.amount_cents) ?? 0;
-  const label = planLabel(record.payment_type);
+/**
+ * How recent a Stripe timestamp must be for the change to count as news. The trigger
+ * can lag behind Stripe, so this is generous, but anything older is a resync of a
+ * subscription that was already dealt with.
+ */
+const BILLING_FRESH_MS = 2 * 60 * 60 * 1000;
 
-  if (plan === 'full') {
-    const amountChanged = op === 'INSERT' || num(old?.amount_cents) !== num(record.amount_cents);
-    const paidAtChanged = op === 'INSERT' || str(old?.paid_at) !== str(record.paid_at);
-    if (amount > 0 && (amountChanged || paidAtChanged)) {
-      return { type: 'paid', userId, vars: { amountCents: amount, plan: label }, dedupeMinutes: 10 };
-    }
-    const becameFull = op === 'INSERT' || str(old?.plan) !== 'full' || str(old?.payment_type) !== str(record.payment_type);
-    if (amount <= 0 && becameFull) {
-      return { type: 'trial', userId, vars: { plan: label }, dedupeMinutes: 60 * 24 };
-    }
+function isFresh(unixSeconds: number | null | undefined): boolean {
+  return typeof unixSeconds === 'number' && Date.now() - unixSeconds * 1000 <= BILLING_FRESH_MS;
+}
+
+/** Real trial length, 3 days on the quarterly plan and 7 on the yearly. */
+function trialDays(sub: Stripe.Subscription): number | null {
+  if (!sub.trial_start || !sub.trial_end) return null;
+  return Math.round((sub.trial_end - sub.trial_start) / 86_400);
+}
+
+async function fetchSubscription(id: string): Promise<Stripe.Subscription | null> {
+  const stripe = stripeClient();
+  if (!stripe) return null;
+  try {
+    return await stripe.subscriptions.retrieve(id, { expand: ['latest_invoice'] });
+  } catch (err) {
+    console.error('Stripe subscription lookup failed', id, err);
     return null;
   }
+}
 
-  if (plan === 'free' && str(record.payment_type) === 'canceled' && str(old?.plan) === 'full') {
-    return { type: 'cancel', userId, vars: { plan: planLabel(old?.payment_type) }, dedupeMinutes: 60 };
+/**
+ * Inkbound writes user_subscriptions on ordinary page loads, not only at checkout. It
+ * stamps paid_at with now() and leaves amount_cents null or 0 even on paid plans, so
+ * the row cannot say what actually happened: an athlete opening the dashboard looks
+ * exactly like a fresh trial. Stripe is the only thing that knows, and every alert
+ * here is gated on a Stripe timestamp so a resync can never be reported as new.
+ */
+async function subscriptionEvent(record: Row): Promise<FounderEvent | null> {
+  const userId = str(record.user_id);
+  if (!userId) return null;
+  const label = planLabel(record.payment_type);
+
+  const subscriptionId = str(record.stripe_subscription_id);
+  if (!subscriptionId) {
+    // Legacy lifetime and one-time grants have no subscription to check. A real charge
+    // is still worth reporting; an unverifiable row is never assumed to be a trial.
+    const amount = num(record.amount_cents) ?? 0;
+    return amount > 0
+      ? { type: 'paid', userId, vars: { amountCents: amount, plan: label }, dedupeMinutes: 60 }
+      : null;
+  }
+
+  const sub = await fetchSubscription(subscriptionId);
+  if (!sub) return null;
+
+  const invoice = typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
+  if (invoice && invoice.amount_paid > 0 && isFresh(invoice.status_transitions?.paid_at)) {
+    return { type: 'paid', userId, vars: { amountCents: invoice.amount_paid, plan: label }, dedupeMinutes: 60 };
+  }
+  if (sub.status === 'trialing' && isFresh(sub.trial_start)) {
+    return { type: 'trial', userId, vars: { plan: label, days: trialDays(sub) }, dedupeMinutes: 60 * 24 };
+  }
+  if (isFresh(sub.canceled_at)) {
+    // Stripe gives up after retrying a failed charge. That is churn, but the athlete
+    // never chose it, so it must not read as a deliberate cancellation.
+    const involuntary = sub.cancellation_details?.reason === 'payment_failed';
+    return { type: involuntary ? 'payment_failed' : 'cancel', userId, vars: { plan: label }, dedupeMinutes: 60 };
   }
   return null;
 }
@@ -191,12 +236,33 @@ async function replyEvent(supabase: SupabaseClient, record: Row): Promise<Founde
   return { type: 'reply', userId: sent.user_id, vars: { school, division } };
 }
 
+/** Sent by the campaign-followups and generate-update-campaigns crons, not by the athlete. */
+const AUTOMATED_PURPOSES = new Set(['follow_up_1', 'follow_up_2', 'follow_up_3', 'update_1']);
+
+/** One-off lists are named "Message <school>" by the Inkbound app. */
+function messagedSchool(record: Row): string | null {
+  const name = str(record.name);
+  return name ? str(name.replace(/^Message\s+/i, '')) : null;
+}
+
+/**
+ * outreach_lists backs two different features: real campaigns, which average 42 schools,
+ * and the one-off "message this school" button, which writes a separate row per school.
+ * Treating every row as a campaign turned eight individual messages into eight identical
+ * "just sent his campaign" alerts.
+ */
 function campaignEvent(record: Row): FounderEvent | null {
   const userId = str(record.user_id);
   if (!userId) return null;
+  const purpose = str(record.purpose);
+  if (purpose && AUTOMATED_PURPOSES.has(purpose)) return null;
+
   const schools = num(record.schools_count);
+  if (schools === 1) {
+    return { type: 'message', userId, vars: { school: messagedSchool(record) } };
+  }
   const coaches = num(record.emails_sent) ?? schools;
-  return { type: 'campaign', userId, vars: { n: coaches, m: schools } };
+  return { type: 'campaign', userId, vars: { n: coaches, m: schools }, dedupeMinutes: 10 };
 }
 
 function videoEvent(record: Row): FounderEvent | null {
@@ -224,10 +290,10 @@ function stalledEvent(record: Row): FounderEvent | null {
 }
 
 async function resolveEvent(supabase: SupabaseClient, payload: WebhookPayload): Promise<FounderEvent | null> {
-  const { table, op, record, old_record: old } = payload;
+  const { table, record } = payload;
   switch (table) {
     case 'user_subscriptions':
-      return subscriptionEvent(op, record, old);
+      return subscriptionEvent(record);
     case 'product_events':
       return productEvent(supabase, record);
     case 'paywall_stalls':
@@ -251,14 +317,25 @@ async function userContext(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ fullName: string | null; pronoun: Pronoun; isDemo: boolean }> {
-  const [profile, intake] = await Promise.all([
+  const [profile, intake, aboutYou] = await Promise.all([
     supabase.from('user_profiles').select('full_name, is_demo, is_admin').eq('user_id', userId).maybeSingle(),
     supabase.from('user_onboarding_intake').select('sport').eq('user_id', userId).maybeSingle(),
+    // Phone signups have no profile name at the paywall; the about-you screen's answer carries it.
+    supabase
+      .from('product_events')
+      .select('properties')
+      .eq('user_id', userId)
+      .eq('name', 'onboarding_answer')
+      .eq('properties->>screen', 's30_about_you')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   const row = profile.data as { full_name: string | null; is_demo: boolean | null; is_admin: boolean | null } | null;
   const sport = (intake.data as { sport: string | null } | null)?.sport ?? null;
+  const typedName = (aboutYou.data as { properties: { fullName?: unknown } | null } | null)?.properties?.fullName;
   return {
-    fullName: row?.full_name ?? null,
+    fullName: str(row?.full_name) ?? (typeof typedName === 'string' ? str(typedName) : null),
     pronoun: pronounFromSport(sport),
     isDemo: Boolean(row?.is_demo || row?.is_admin),
   };

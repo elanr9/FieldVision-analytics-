@@ -46,7 +46,7 @@ function keyProblem(): string | null {
   return null;
 }
 
-function stripeClient(): Stripe | null {
+export function stripeClient(): Stripe | null {
   const key = cleanKey();
   if (!key) return null;
   return new Stripe(key, {

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { isLikelyFake, laterDuplicateEmailIds } from './fake-accounts';
+import { guestUpgrades, isLikelyFake, laterDuplicateEmailIds } from './fake-accounts';
 import { PAYWALL_SCREENS } from './funnel';
 import { loadUsers } from './queries';
 import type { UserRecord } from './types';
@@ -85,26 +85,35 @@ export function buildEveryone(
 ): EveryoneRecord[] {
   const everyone = users.filter(u => !u.excludedFromMetrics);
   const duplicateIds = laterDuplicateEmailIds(everyone);
+  const upgrades = guestUpgrades(everyone);
+  const upgradedIds = new Set([...upgrades.values()].map(g => g.laterId));
   const athleteByParentEmail = athleteIdsByParentEmail(everyone);
 
   return everyone.map(u => {
     const act = activity.get(u.id) ?? NO_ACTIVITY;
+    // A guest account keeps its own history but takes the email and name from the real signup that followed.
+    const upgrade = upgrades.get(u.id);
+    const name = upgrade?.name ?? u.name;
+    const email = upgrade?.email ?? u.email;
     const verdict = isLikelyFake(
       {
-        name: u.name,
+        name,
         signupDate: u.signupDate,
         onboarding: u.onboarding,
         eventCount: act.eventCount,
         laterDuplicateEmail: duplicateIds.has(u.id),
+        guestDuplicate: upgradedIds.has(u.id),
       },
       now,
     );
     const cancelled = cancelledAt.get(u.id);
     return {
       ...u,
+      name,
+      email,
       junk: verdict.fake,
       junkReason: verdict.reason ?? null,
-      athleteId: u.isParent ? athleteByParentEmail.get(u.email.toLowerCase()) ?? null : null,
+      athleteId: u.isParent ? athleteByParentEmail.get(email.toLowerCase()) ?? null : null,
       parentActive: u.isParent && act.eventCount > 0,
       stoppedAtPaywall: u.status === 'signed_up' && u.onboarding === 'completed' && act.sawPaywall,
       trialEndsIn: u.status === 'trialing' && u.trialEndsAt ? hoursUntil(u.trialEndsAt, now) : null,

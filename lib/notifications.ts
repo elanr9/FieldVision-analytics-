@@ -4,19 +4,27 @@ import { createClient } from '@supabase/supabase-js';
  * Product events shown in the Activity feed. Each row in analytics_notifications
  * carries the exact catalogue title/sub so the feed never has to rebuild copy.
  *
- * Every type is recorded by app/api/notify/route.ts, fed by the database
- * triggers in supabase/migrations/20260908230000_analytics_notify_triggers.sql:
- *   trial     user_subscriptions becomes plan=full with no charge
- *   paid      user_subscriptions plan=full with amount_cents > 0
- *   cancel    user_subscriptions plan=full -> free/canceled
+ * Every type except call_soon is recorded by app/api/notify/route.ts, fed by the
+ * database triggers in supabase/migrations/20260908230000_analytics_notify_triggers.sql.
+ *
+ * user_subscriptions is written by the Inkbound app on ordinary page loads, not just
+ * at checkout, so its columns cannot tell a real billing change from a resync. The
+ * three billing types below are therefore confirmed against Stripe before they fire.
+ *   trial     Stripe subscription is trialing and the trial began just now
+ *   paid      Stripe invoice paid just now for more than $0
+ *   cancel    Stripe subscription cancelled just now by the athlete
+ *   payment_failed  Stripe killed the subscription because the charge never went through
+ *
  *   call      founder_calls insert
- *   call_soon pg_cron analytics_check_upcoming_calls(), 10 min before a booked call
+ *   call_soon pg_cron analytics_check_upcoming_calls(), inserted straight into the
+ *             table by analytics_notify_upcoming_call() rather than through the route
  *   paywall   product_events onboarding_screen_view s37_paywall
  *   wheel     product_events onboarding_screen_view s37c_spin_wheel or s38_one_time_offer
  *   stalled   pg_cron analytics_check_paywall_stalls(), paywall view with 10 min of nothing after it
  *   save      product_events retention_offer_accepted (retention-offer edge function)
  *   reply     email_replies insert with kind=reply
- *   campaign  outreach_lists sent_at set
+ *   campaign  outreach_lists sent_at set, a real multi school campaign
+ *   message   outreach_lists sent_at set, a one-off message to a single school
  *   video     projects status -> downloadable
  */
 export type NotificationType =
@@ -26,15 +34,17 @@ export type NotificationType =
   | 'trial'
   | 'paid'
   | 'cancel'
+  | 'payment_failed'
   | 'save'
   | 'reply'
   | 'campaign'
+  | 'message'
   | 'video'
   | 'call'
   | 'call_soon';
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
-  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'save', 'reply', 'campaign', 'video', 'call', 'call_soon',
+  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'payment_failed', 'save', 'reply', 'campaign', 'message', 'video', 'call', 'call_soon',
 ];
 
 /**
@@ -43,8 +53,10 @@ export const NOTIFICATION_TYPES: readonly NotificationType[] = [
  *   pronoun (cancel, campaign)  his | her | their; recordEvent fills it from the intake when missing
  *   n (paywall)            days since onboarding finished
  *   plan (trial, paid, cancel)  plan label, e.g. "$60 semester"
+ *   days (trial)           real trial length from Stripe; 3 on quarterly, 7 on yearly
  *   amountCents (paid)     charge amount in cents
  *   school, coach (reply)
+ *   school (message)       the single school that was messaged
  *   n, m (campaign)        coaches and schools counts
  *   videoTitle (video)
  *   slot (call, call_soon) e.g. "Thu 4:30pm"
@@ -60,9 +72,11 @@ export const NOTIF_DOT: Record<NotificationType, string> = {
   trial: 'var(--sky-500)',
   paid: 'var(--green-600)',
   cancel: 'var(--red-500)',
+  payment_failed: 'var(--red-500)',
   save: 'var(--green-500)',
   reply: 'var(--ink-500)',
   campaign: 'var(--ink-500)',
+  message: 'var(--ink-500)',
   video: 'var(--ink-500)',
   call: 'var(--ink-700)',
   call_soon: 'var(--green-600)',
@@ -117,7 +131,8 @@ function withSuffix(value: string | null, suffix: string): string | null {
 
 /** Builds the exact catalogue title and sub for a feed row. Pure. */
 export function buildNotificationCopy(type: NotificationType, vars: NotificationVars): { title: string; sub: string | null } {
-  const first = text(vars.first) ?? 'Someone';
+  // Phone signups reach the paywall before the app has written a name to their profile.
+  const first = text(vars.first) ?? 'A new athlete';
   const pronoun = text(vars.pronoun) ?? 'their';
   const plan = text(vars.plan);
   switch (type) {
@@ -129,12 +144,17 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
       return { title: `${first} is on the 90% off screen`, sub: null };
     case 'stalled':
       return { title: `${first} stopped at paywall`, sub: '10 min without action' };
-    case 'trial':
-      return { title: `${first} started a 3 day free trial`, sub: withSuffix(plan, ' plan') };
+    case 'trial': {
+      const days = text(vars.days);
+      const length = days === null ? 'a free trial' : `a ${days} day free trial`;
+      return { title: `${first} started ${length}`, sub: withSuffix(plan, ' plan') };
+    }
     case 'paid':
       return { title: `${first} paid ${formatDollars(vars.amountCents) ?? ''}`.trimEnd(), sub: withSuffix(plan, ' plan') };
     case 'cancel':
       return { title: `${first} cancelled ${pronoun} subscription`, sub: plan };
+    case 'payment_failed':
+      return { title: `${first}'s payment failed, subscription ended`, sub: plan };
     case 'save':
       return { title: `${first} tried to cancel, accepted free month`, sub: null };
     case 'reply':
@@ -144,6 +164,8 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
       const m = text(vars.m);
       return { title: `${first} just sent ${pronoun} campaign`, sub: n !== null && m !== null ? `${n} coaches · ${m} schools` : null };
     }
+    case 'message':
+      return { title: `${first} messaged ${text(vars.school) ?? 'a school'}`, sub: null };
     case 'video':
       return { title: `${first} just made a highlight video`, sub: text(vars.videoTitle) };
     case 'call':

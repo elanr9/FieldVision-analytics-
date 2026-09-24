@@ -14,9 +14,10 @@ export interface RateProps {
 
 /** One headline conversion row: label, "b of a people · lost", track bar and the percent. */
 export function Rate({ label, a, b, warn }: RateProps) {
-  const pct = share(b, a);
+  const raw = share(b, a);
+  const pct = raw === null ? null : Math.min(100, raw);
   const low = warn && pct !== null && pct < 50;
-  const lost = a === null || b === null ? '—' : String(a - b);
+  const lost = a === null || b === null ? '—' : String(Math.max(0, a - b));
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 12, padding: '9px 0' }}>
       <div style={{ minWidth: 0 }}>

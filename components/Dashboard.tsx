@@ -60,8 +60,10 @@ export default function Dashboard({
   };
 
   const overview = useMemo(() => buildOverview(users, revenue), [users, revenue]);
-  const real = users.filter(u => !u.excludedFromMetrics);
-  const everyone = real;
+  // accounts carries the junk verdict; without it the header would keep counting test
+  // names, never-opened accounts and the duplicate half of a guest signup.
+  const junkIds = useMemo(() => new Set(accounts.filter(a => a.junk).map(a => a.id)), [accounts]);
+  const everyone = users.filter(u => !u.excludedFromMetrics && !junkIds.has(u.id));
   const paying = everyone.filter(u => u.status === 'paying');
   const trialing = everyone.filter(u => u.status === 'trialing');
 
@@ -100,7 +102,7 @@ export default function Dashboard({
   const onStat = (s: HeaderStatItem) => push({ key: 'people-' + s.key, node: <PeopleScreen title={s.title} users={s.users} /> });
 
   const tabPanels = [
-    { key: 'overview', node: <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={real} usage={usage} push={push} /> },
+    { key: 'overview', node: <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={everyone} usage={usage} push={push} /> },
     { key: 'activity', node: <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} /> },
     { key: 'onboarding', node: <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} /> },
     { key: 'users', node: <UsersTab users={accounts} /> },

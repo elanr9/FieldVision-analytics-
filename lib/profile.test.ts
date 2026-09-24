@@ -119,6 +119,7 @@ const dossier: UserDossier = {
   ],
   topViewers: [],
   calls: [],
+  campaigns: [],
 };
 
 const empty: UserDossier = {
@@ -129,6 +130,7 @@ const empty: UserDossier = {
   replies: [],
   topViewers: [],
   calls: [],
+  campaigns: [],
 };
 
 test('paying athlete', () => {

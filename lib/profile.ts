@@ -1,5 +1,5 @@
 import type { PlanInterval, UserRecord } from './types';
-import type { DossierBackground, UserDossier } from './user-dossier';
+import type { DossierBackground, DossierCampaign, UserDossier } from './user-dossier';
 
 export type BackgroundChapterKey = 'basic' | 'checkin' | 'academic' | 'athletic' | 'goals';
 
@@ -33,6 +33,30 @@ export interface ProfileReply {
   replyBody: string | null;
 }
 
+export interface ProfileCampaignSchool {
+  key: string;
+  school: string;
+  coach: string;
+  sentAt: string | null;
+  emails: number;
+  opened: boolean;
+  openCount: number;
+  replied: boolean;
+  /** Highest watch percentage reached on the athlete's videos, null when never watched */
+  watchPct: number | null;
+}
+
+export interface ProfileCampaign {
+  id: string;
+  name: string;
+  status: string;
+  sent: boolean;
+  /** Send date when sent, otherwise creation date */
+  at: string;
+  schools: ProfileCampaignSchool[];
+  counts: { schools: number; opened: number; replied: number; watched: number };
+}
+
 export interface Profile {
   planLabel: string;
   planFact: [string, string];
@@ -42,6 +66,7 @@ export interface Profile {
   stats: { emails: number; replies: number; views: number; calls: number };
   videos: ProfileVideo[];
   replies: ProfileReply[];
+  campaigns: ProfileCampaign[];
   background: BackgroundChapter[];
 }
 
@@ -397,7 +422,39 @@ export function buildProfile(user: UserRecord, dossier: UserDossier | null, now:
       outreachBody: r.outreachBody,
       replyBody: r.replyBody,
     })),
+    campaigns: (dossier?.campaigns ?? []).map(buildCampaign),
     background: buildBackground(user, dossier?.background ?? null, now),
+  };
+}
+
+const SENT_STATUSES = new Set(['sent', 'completed', 'follow_up_1_sent', 'follow_up_2_sent', 'follow_up_3_sent']);
+
+function buildCampaign(c: DossierCampaign): ProfileCampaign {
+  const schools: ProfileCampaignSchool[] = c.schools.map(s => ({
+    key: s.key,
+    school: s.schoolName ?? 'Unknown school',
+    coach: coachLabel(s.coachName, s.coachEmail),
+    sentAt: s.sentAt,
+    emails: s.emails,
+    opened: s.opened,
+    openCount: s.openCount,
+    replied: s.replied,
+    watchPct: s.videoWatchPct,
+  }));
+  const sent = SENT_STATUSES.has(c.status) || schools.length > 0;
+  return {
+    id: c.id,
+    name: c.name,
+    status: sent ? 'Sent' : sentenceCase(c.status.replace(/_/g, ' ')),
+    sent,
+    at: c.sentAt ?? c.createdAt,
+    schools,
+    counts: {
+      schools: schools.length,
+      opened: schools.filter(s => s.opened).length,
+      replied: schools.filter(s => s.replied).length,
+      watched: schools.filter(s => s.watchPct != null).length,
+    },
   };
 }
 

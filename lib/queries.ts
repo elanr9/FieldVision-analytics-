@@ -1,11 +1,54 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, fakeReason, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
-import { deriveOnboardingStatus, resolveFromIntake } from './onboarding-resolve';
+import { deriveOnboardingStatus, resolveFromIntake, type FlowProgress } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
 /** Intake updated within this window means the user is likely still onboarding right now */
 const ONBOARDING_ACTIVE_MS = 60 * 60 * 1000;
+
+const PAGE_SIZE = 1000;
+const PAYWALL_SCREEN_ID = 's37_paywall';
+const ABOUT_YOU_SCREEN_ID = 's30_about_you';
+
+interface FlowEventRow {
+  user_id: string | null;
+  name: string;
+  properties: { screen?: unknown; fullName?: unknown } | null;
+}
+
+interface FlowEvents {
+  progress: Map<string, FlowProgress>;
+  /** Name typed on the about-you screen, for profiles the app has not named yet. */
+  names: Map<string, string>;
+}
+
+/** What the new onboarding flow's events say about each user. */
+async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise<FlowEvents> {
+  const progress = new Map<string, FlowProgress>();
+  const names = new Map<string, string>();
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('product_events')
+      .select('user_id, name, properties')
+      .in('name', ['onboarding_screen_view', 'onboarding_answer'])
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as FlowEventRow[];
+    for (const row of rows) {
+      if (!row.user_id) continue;
+      const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
+      if (screen === PAYWALL_SCREEN_ID) progress.set(row.user_id, 'reached_paywall');
+      else if (!progress.has(row.user_id)) progress.set(row.user_id, 'started');
+      const fullName = row.properties?.fullName;
+      if (row.name === 'onboarding_answer' && screen === ABOUT_YOU_SCREEN_ID && typeof fullName === 'string' && fullName.trim()) {
+        names.set(row.user_id, fullName.trim());
+      }
+    }
+    if (rows.length < PAGE_SIZE) return { progress, names };
+  }
+}
 
 function adminClient() {
   const url = process.env.SUPABASE_URL;
@@ -28,7 +71,7 @@ interface ParentInviteRow {
 export async function loadUsers(): Promise<UserRecord[]> {
   const supabase = adminClient();
 
-  const [profilesRes, subsRes, intakeRes, parentRes, authRes] = await Promise.all([
+  const [profilesRes, subsRes, intakeRes, parentRes, authRes, flowEvents] = await Promise.all([
     supabase
       .from('user_profiles')
       .select(
@@ -45,6 +88,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
       ),
     supabase.from('parent_invites').select('player_user_id, parent_email'),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    loadFlowEvents(supabase),
   ]);
 
   if (profilesRes.error) throw profilesRes.error;
@@ -93,8 +137,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
 
     const isParent = profile.account_type === 'parent';
     const hasFullPlan = sub?.plan === 'full';
-    const onboarding = deriveOnboardingStatus(intake, profile.trial_started_at, hasFullPlan);
-    const name = profile.full_name ?? 'Unknown';
+    const onboarding = deriveOnboardingStatus(intake, profile.trial_started_at, hasFullPlan, flowEvents.progress.get(profile.user_id) ?? 'none');
+    const name = profile.full_name ?? flowEvents.names.get(profile.user_id) ?? 'Unknown';
     const email = resolveEmail(profile);
     const lastSignInAt = lastSignInByUser.get(profile.user_id) ?? null;
 

@@ -1,6 +1,6 @@
 import type { ScreenEvent } from './onboarding-analytics';
 import type { FlowScreenDef } from './onboarding-flow.generated';
-import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowSectionKey } from './onboarding-flow';
+import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowScreen, type FlowSectionKey } from './onboarding-flow';
 import type { UserRecord } from './types';
 
 /**
@@ -88,6 +88,8 @@ export interface Funnel {
   unknownScreens: string[];
   /** Steps before the first screen the apps record; they render as "—". */
   untrackedSteps: number;
+  /** Of those who started a trial in range, how many have paid. Paying without a trial is possible, so this is not paid ÷ trial. */
+  trialConverted: number;
 }
 
 export interface PaywallPlan {
@@ -174,21 +176,43 @@ function usersByScreen(events: ScreenEvent[], allowed: Set<string>): Map<string,
   return byScreen;
 }
 
+/** The account is created here, so nothing before it is recorded until the apps buffer pre-auth events. */
+const ACCOUNT_SCREEN_ID = 's31_verify_phone';
+
+/**
+ * Whether the apps are really recording the screens before sign-in. A couple of returning users
+ * replaying onboarding are enough to put rows on s01_welcome, which is not the same as the
+ * instrumentation working, so this asks the pre-auth stretch to be reporting broadly first.
+ */
+function preAuthTracked(screens: FlowScreen[], byScreen: Map<string, Set<string>>): boolean {
+  const accountAt = screens.findIndex(s => s.id === ACCOUNT_SCREEN_ID);
+  const preAuth = screens.slice(0, accountAt === -1 ? screens.length : accountAt);
+  if (preAuth.length === 0) return false;
+  const reporting = preAuth.filter(s => (byScreen.get(s.id)?.size ?? 0) > 0).length;
+  return reporting * 2 >= preAuth.length;
+}
+
 /**
  * Who started onboarding. The apps only write product_events once a user is signed in, and the account is
  * created mid-flow (s31_verify_phone), so until they record the screens before sign-in the honest count is
- * accounts created in range: everyone with an account went through the flow to get it.
- * Once s01_welcome views arrive the funnel switches to them on its own.
+ * accounts created in range that have any flow event at all. Accounts made through the login form by
+ * Google or email never saw these screens, so counting them would make every step look like a cliff.
+ * Once the early screens are genuinely tracked the funnel switches to s01_welcome viewers on its own.
  */
 function startedUsers(
+  preAuthOk: boolean,
   byScreen: Map<string, Set<string>>,
   included: UserRecord[],
   range: DateRange,
 ): { users: Set<string>; source: StartedSource } {
   const viewers = byScreen.get(STARTED_SCREEN_ID);
-  if (viewers && viewers.size > 0) return { users: viewers, source: 'welcome_screen' };
+  if (viewers && viewers.size > 0 && preAuthOk) {
+    return { users: viewers, source: 'welcome_screen' };
+  }
+  const inFlow = new Set<string>();
+  for (const set of byScreen.values()) for (const id of set) inFlow.add(id);
   return {
-    users: new Set(included.filter(u => isWithin(u.signupDate, range)).map(u => u.id)),
+    users: new Set(included.filter(u => inFlow.has(u.id) && isWithin(u.signupDate, range)).map(u => u.id)),
     source: 'accounts_created',
   };
 }
@@ -199,6 +223,8 @@ export interface BuildFunnelInput {
   range: DateRange;
   /** Defaults to the generated mirror; tests pass a small list. */
   defs?: FlowScreenDef[];
+  /** Screen ids the apps have ever emitted, all time. Anything absent renders as "—" instead of a zero. */
+  seenScreens?: Set<string>;
 }
 
 interface MeasuredStep {
@@ -218,19 +244,31 @@ function countStarted(users: Set<string> | undefined, started: Set<string>): num
 }
 
 /**
- * Screen steps in flow order. Screens before the first one the apps have recorded are untracked (null);
- * everything from there on is a real count, including zeros.
+ * Screen steps in flow order. A screen the apps have never emitted is untracked (null) so it renders
+ * as "—" rather than a drop nobody made; everything they do emit is a real count, including zeros.
+ * `seen` is the all-time set of emitted ids. Without it, position is the only available clue and
+ * screens before the first one with events are treated as untracked.
  */
 function screenSteps(
   byScreen: Map<string, Set<string>>,
   started: Set<string>,
   source: StartedSource,
+  preAuthOk: boolean,
   defs?: FlowScreenDef[],
+  seen?: Set<string>,
 ): MeasuredStep[] {
   const screens = flowScreens(byScreen.keys(), defs);
   const firstTracked = screens.findIndex(s => (byScreen.get(s.id)?.size ?? 0) > 0);
+  const accountAt = screens.findIndex(s => s.id === ACCOUNT_SCREEN_ID);
+  const preAuthEnd = accountAt === -1 ? 0 : accountAt;
   return screens.map((s, i) => {
-    const untracked = firstTracked === -1 || i < firstTracked;
+    // Screens before the account exist only if the apps buffer pre-auth events, which either works
+    // for the whole stretch or none of it. The few rows returning users leave behind are not coverage.
+    const untracked = i < preAuthEnd
+      ? !preAuthOk
+      : seen
+        ? !seen.has(s.id)
+        : firstTracked === -1 || i < firstTracked;
     const isStart = s.id === STARTED_SCREEN_ID && source === 'welcome_screen';
     const section = sectionByNumber(s.section);
     return {
@@ -262,8 +300,11 @@ function toFunnelSteps(measured: MeasuredStep[], started: number): FunnelStep[] 
     const pct = pct1(m.reached, started);
     if (m.conditional) return { ...base, pct, dropped: null, dropPct: null };
     const arrivals = previousReached;
-    const dropped = Math.max(0, arrivals - m.reached);
     previousReached = m.reached;
+    // More people here than at the step before means the earlier step is under-tracked, not that
+    // nobody left. There is no drop to report, and a negative one would be a lie.
+    if (m.reached > arrivals) return { ...base, pct, dropped: null, dropPct: null };
+    const dropped = arrivals - m.reached;
     return { ...base, pct, dropped, dropPct: pct1(dropped, arrivals) };
   });
 }
@@ -274,13 +315,16 @@ export function buildChapters(steps: FunnelStep[]): Chapter[] {
     // Arrivals are measured at the first tracked step; untracked leading screens carry no information.
     const first = chapterSteps.find(s => s.reached !== null);
     const lastUnconditional = [...chapterSteps].reverse().find(s => !s.conditional) ?? chapterSteps[chapterSteps.length - 1];
+    const exit = lastUnconditional?.reached ?? null;
+    const entered = first?.reached == null ? null : first.reached + (first.dropped ?? 0);
     return {
       key: section.key,
       label: section.label,
       short: section.short,
       steps: chapterSteps,
-      enter: first?.reached == null ? null : first.reached + (first.dropped ?? 0),
-      exit: lastUnconditional?.reached ?? null,
+      // A chapter cannot be finished by more people than entered it; when it looks that way the entry is what is unknown.
+      enter: entered !== null && exit !== null && exit > entered ? null : entered,
+      exit,
     };
   });
 }
@@ -289,12 +333,14 @@ export function buildFunnel(input: BuildFunnelInput): Funnel {
   const included = includedUsers(input.users);
   const allowed = new Set(included.map(u => u.id));
   const byScreen = usersByScreen(input.events, allowed);
-  const started = startedUsers(byScreen, included, input.range);
+  const preAuthOk = preAuthTracked(flowScreens(byScreen.keys(), input.defs), byScreen);
+  const started = startedUsers(preAuthOk, byScreen, included, input.range);
   const measured = [
-    ...screenSteps(byScreen, started.users, started.source, input.defs),
+    ...screenSteps(byScreen, started.users, started.source, preAuthOk, input.defs, input.seenScreens),
     ...accountSteps(started.users, included, input.range),
   ];
   const steps = toFunnelSteps(measured, started.users.size);
+  const cohort = included.filter(u => started.users.has(u.id));
   return {
     steps,
     chapters: buildChapters(steps),
@@ -302,6 +348,7 @@ export function buildFunnel(input: BuildFunnelInput): Funnel {
     startedSource: started.source,
     unknownScreens: steps.filter(s => !s.known).map(s => s.id),
     untrackedSteps: steps.filter(s => s.reached === null).length,
+    trialConverted: cohort.filter(u => isWithin(u.trialStartedAt, input.range) && u.paidAt !== null).length,
   };
 }
 
@@ -402,11 +449,12 @@ async function loadPaywallEventUsers(deps: Awaited<ReturnType<typeof loadDeps>>,
 export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funnel> {
   const deps = await loadDeps();
   const range = rangeForDays(days);
-  const [allUsers, events] = await Promise.all([
+  const [allUsers, events, seenScreens] = await Promise.all([
     users ?? deps.loadUsers(),
     deps.loadScreenEvents(range.from.toISOString(), range.to.toISOString()),
+    deps.loadSeenScreenIds(),
   ]);
-  return buildFunnel({ events, users: allUsers, range });
+  return buildFunnel({ events, users: allUsers, range, seenScreens });
 }
 
 export async function loadPaywall(days = 30, users?: UserRecord[]): Promise<Paywall> {

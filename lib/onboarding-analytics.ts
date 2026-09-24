@@ -311,6 +311,28 @@ export async function loadSeenPaywallKeys(): Promise<Set<string>> {
   return seen;
 }
 
+/**
+ * Every onboarding screen id the apps have ever emitted, all time. Lets the funnel tell a screen
+ * nobody reached in range from one the apps have never instrumented at all.
+ */
+export async function loadSeenScreenIds(): Promise<Set<string>> {
+  const supabase = adminClient();
+  const rows = await fetchAllPages<{ properties: { screen?: unknown } | null }>((from, to) =>
+    supabase
+      .from('product_events')
+      .select('properties')
+      .in('name', Object.keys(SCREEN_EVENT_KIND))
+      .order('created_at', { ascending: false })
+      .range(from, to),
+  );
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const screen = row.properties?.screen;
+    if (typeof screen === 'string') seen.add(screen);
+  }
+  return seen;
+}
+
 /** Which of the given event names the athlete app has ever emitted. Lets a zero in range differ from an event that does not exist yet. */
 export async function loadSeenEventNames(names: readonly string[]): Promise<Set<string>> {
   const supabase = adminClient();

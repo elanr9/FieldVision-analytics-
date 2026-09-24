@@ -115,6 +115,34 @@ export interface DossierCall {
   note: string | null;
 }
 
+export interface DossierCampaignSchool {
+  key: string;
+  schoolId: string | null;
+  schoolName: string | null;
+  coachName: string | null;
+  coachEmail: string | null;
+  /** First outreach email in this campaign to this school */
+  sentAt: string | null;
+  /** Initial email plus follow-ups sent to this school inside this campaign */
+  emails: number;
+  opened: boolean;
+  openCount: number;
+  replied: boolean;
+  repliedAt: string | null;
+  /** Highest watch percentage any coach at this school reached on the athlete's videos */
+  videoWatchPct: number | null;
+}
+
+export interface DossierCampaign {
+  id: string;
+  name: string;
+  status: string;
+  purpose: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  schools: DossierCampaignSchool[];
+}
+
 export interface UserDossier {
   background: DossierBackground | null;
   stats: {
@@ -132,6 +160,7 @@ export interface UserDossier {
   replies: DossierReply[];
   topViewers: DossierViewer[];
   calls: DossierCall[];
+  campaigns: DossierCampaign[];
 }
 
 interface IntakeRow {
@@ -208,6 +237,28 @@ interface EmailRow {
   body_html?: string | null;
 }
 
+interface CampaignEmailRow {
+  id: string;
+  list_id: string | null;
+  school_id: string | null;
+  coach_name: string | null;
+  coach_email: string | null;
+  sent_at: string | null;
+  created_at: string;
+  opened_at: string | null;
+  open_count: number | null;
+  replied_at: string | null;
+}
+
+interface ListRow {
+  id: string;
+  name: string | null;
+  status: string | null;
+  purpose: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
 interface ViewRow {
   coach_email: string | null;
   school_id: string | null;
@@ -275,6 +326,8 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     repliesCountRes,
     viewsRes,
     bookingsRes,
+    listsRes,
+    campaignEmailsRes,
   ] = await Promise.all([
     supabase
       .from('user_onboarding_intake')
@@ -330,9 +383,23 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
       .select('id, ambassador_name, start_at, end_at, status, meet_link, student_note')
       .eq('student_user_id', userId)
       .order('start_at', { ascending: false }),
+    supabase
+      .from('outreach_lists')
+      .select('id, name, status, purpose, created_at, sent_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('user_sent_emails')
+      .select('id, list_id, school_id, coach_name, coach_email, sent_at, created_at, opened_at, open_count, replied_at')
+      .eq('user_id', userId)
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: true })
+      .limit(3000),
   ]);
 
   const intake = (intakeRes.data ?? null) as IntakeRow | null;
+  const lists = (listsRes.data ?? []) as ListRow[];
+  const campaignEmails = (campaignEmailsRes.data ?? []) as CampaignEmailRow[];
   const projects = (projectsRes.data ?? []) as ProjectRow[];
   const emails = (recentEmailsRes.data ?? []) as EmailRow[];
   const replyEmails = (replyEmailsRes.data ?? []) as EmailRow[];
@@ -348,16 +415,17 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
         ...emails.map(e => e.school_id),
         ...replyEmails.map(e => e.school_id),
         ...views.map(v => v.school_id),
+        ...campaignEmails.map(e => e.school_id),
       ].filter((id): id is string => Boolean(id)),
     ),
   );
 
   const schoolNameById = new Map<string, string>();
-  if (schoolIds.length > 0) {
+  for (let i = 0; i < schoolIds.length; i += 200) {
     const { data: schools } = await supabase
       .from('schools')
       .select('school_id, name')
-      .in('school_id', schoolIds.slice(0, 200));
+      .in('school_id', schoolIds.slice(i, i + 200));
     for (const row of schools ?? []) {
       const id = row.school_id as string;
       const name = row.name as string | null;
@@ -460,6 +528,8 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     note: b.student_note,
   }));
 
+  const campaigns = buildCampaigns(lists, campaignEmails, views, schoolNameById);
+
   const background: DossierBackground | null = intake
     ? {
         clubTeam: intake.club_team,
@@ -528,5 +598,87 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     replies,
     topViewers,
     calls,
+    campaigns,
   };
+}
+
+const UNLISTED_CAMPAIGN_ID = 'unlisted';
+
+/**
+ * One row per school per campaign. Follow-ups to the same school inside a
+ * campaign are folded into that school's row. Emails sent outside any list
+ * are grouped into a single "Sent outside a campaign" bucket.
+ */
+function buildCampaigns(
+  lists: ListRow[],
+  emails: CampaignEmailRow[],
+  views: ViewRow[],
+  schoolNameById: Map<string, string>,
+): DossierCampaign[] {
+  const watchBySchool = new Map<string, number>();
+  const watchByCoach = new Map<string, number>();
+  for (const view of views) {
+    const pct = Number(view.max_watch_pct ?? 0);
+    if (view.school_id) watchBySchool.set(view.school_id, Math.max(watchBySchool.get(view.school_id) ?? 0, pct));
+    if (view.coach_email) {
+      const key = view.coach_email.toLowerCase();
+      watchByCoach.set(key, Math.max(watchByCoach.get(key) ?? 0, pct));
+    }
+  }
+
+  const schoolsByList = new Map<string, Map<string, DossierCampaignSchool>>();
+  for (const e of emails) {
+    const listId = e.list_id ?? UNLISTED_CAMPAIGN_ID;
+    const schoolKey = e.school_id ?? e.coach_email?.toLowerCase() ?? e.id;
+    const bucket = schoolsByList.get(listId) ?? new Map<string, DossierCampaignSchool>();
+    const existing = bucket.get(schoolKey);
+    const sentAt = e.sent_at ?? e.created_at;
+    const coachKey = e.coach_email?.toLowerCase();
+    const watchPct = Math.max(
+      e.school_id ? watchBySchool.get(e.school_id) ?? 0 : 0,
+      coachKey ? watchByCoach.get(coachKey) ?? 0 : 0,
+    );
+    bucket.set(schoolKey, {
+      key: `${listId}:${schoolKey}`,
+      schoolId: e.school_id,
+      schoolName: e.school_id ? schoolNameById.get(e.school_id) ?? null : null,
+      coachName: existing?.coachName ?? e.coach_name,
+      coachEmail: existing?.coachEmail ?? e.coach_email,
+      sentAt: existing?.sentAt ?? sentAt,
+      emails: (existing?.emails ?? 0) + 1,
+      opened: Boolean(existing?.opened || e.opened_at),
+      openCount: (existing?.openCount ?? 0) + (e.open_count ?? (e.opened_at ? 1 : 0)),
+      replied: Boolean(existing?.replied || e.replied_at),
+      repliedAt: existing?.repliedAt ?? e.replied_at,
+      videoWatchPct: watchPct > 0 ? watchPct : null,
+    });
+    schoolsByList.set(listId, bucket);
+  }
+
+  const campaigns: DossierCampaign[] = lists.map(l => ({
+    id: l.id,
+    name: l.name ?? 'Campaign',
+    status: l.status ?? 'unknown',
+    purpose: l.purpose,
+    createdAt: l.created_at,
+    sentAt: l.sent_at,
+    schools: Array.from(schoolsByList.get(l.id)?.values() ?? []),
+  }));
+
+  const unlisted = schoolsByList.get(UNLISTED_CAMPAIGN_ID);
+  if (unlisted && unlisted.size > 0) {
+    const schools = Array.from(unlisted.values());
+    const firstSent = schools.map(s => s.sentAt).filter((d): d is string => Boolean(d)).sort()[0] ?? null;
+    campaigns.push({
+      id: UNLISTED_CAMPAIGN_ID,
+      name: 'Sent outside a campaign',
+      status: 'sent',
+      purpose: null,
+      createdAt: firstSent ?? new Date(0).toISOString(),
+      sentAt: firstSent,
+      schools,
+    });
+  }
+
+  return campaigns;
 }

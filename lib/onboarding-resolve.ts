@@ -114,15 +114,21 @@ export function resolveFromStepId(
 }
 
 /** Derive onboarding status from intake plus stronger downstream signals. */
+/** How far the new flow's screen events go for a user. The paywall is the flow's final screen. */
+export type FlowProgress = 'none' | 'started' | 'reached_paywall';
+
+/**
+ * The legacy wizard writes user_onboarding_intake; the new flow writes product_events and
+ * creates the account 31 screens in, so a brand new athlete at the paywall has events, no
+ * intake and no name yet. Either source counts.
+ */
 export function deriveOnboardingStatus(
   intake: { completed: boolean } | undefined,
   trialStartedAt: string | null,
   hasFullPlan: boolean,
+  flow: FlowProgress = 'none',
 ): 'none' | 'in_progress' | 'completed' {
-  if (!intake) {
-    if (trialStartedAt || hasFullPlan) return 'completed';
-    return 'none';
-  }
-  if (intake.completed || trialStartedAt || hasFullPlan) return 'completed';
-  return 'in_progress';
+  if (trialStartedAt || hasFullPlan || intake?.completed || flow === 'reached_paywall') return 'completed';
+  if (intake || flow === 'started') return 'in_progress';
+  return 'none';
 }

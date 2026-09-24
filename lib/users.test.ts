@@ -59,6 +59,18 @@ test('junk accounts carry the rule reason', () => {
   assert.equal(rows[0].junkReason, 'Test-looking name');
 });
 
+test('a guest account keeps its history, takes the later email and name, and hides the later account', () => {
+  const guest = user({ id: 'g', name: 'Jaylen', email: '', status: 'trialing', signupDate: '2026-09-04T16:42:49' });
+  const real = user({ id: 'r', name: 'Jaylen Mack', email: 'jaylen.mack2008@gmail.com', signupDate: '2026-09-04T16:47:33' });
+  const rows = buildEveryone([guest, real], new Map([['g', active], ['r', active]]), new Map(), NOW);
+  const byId = new Map(rows.map(r => [r.id, r]));
+  assert.equal(byId.get('g')?.name, 'Jaylen Mack');
+  assert.equal(byId.get('g')?.email, 'jaylen.mack2008@gmail.com');
+  assert.equal(byId.get('g')?.junk, false);
+  assert.equal(byId.get('r')?.junk, true);
+  assert.equal(byId.get('r')?.junkReason, 'Duplicate of a guest signup');
+});
+
 test('parents link to the athlete whose invite matches their email and know if they opened the app', () => {
   const athlete = user({ id: 'a', status: 'paying', parentEmail: 'Dana.Okafor@gmail.com' });
   const parent = user({ id: 'p', name: 'Dana Okafor', email: 'dana.okafor@gmail.com', isParent: true });
