@@ -22,7 +22,7 @@ import { lastSentAt } from '@/lib/checkins';
 import { buildFacts, buildProfile, formatAgo, formatShortDay, planLabel, type BackgroundChapterKey, type ProfileCampaign, type ProfileReply, type ProfileVideo } from '@/lib/profile';
 import type { UserRecord } from '@/lib/types';
 
-export interface ProfileScreenProps { user: UserRecord; focusCall?: boolean }
+export interface ProfileScreenProps { user: UserRecord; focusCall?: boolean; focusCheckin?: boolean }
 
 type Section = 'background' | 'videos' | 'replies' | 'campaigns';
 
@@ -86,7 +86,7 @@ function findAthlete(parent: UserRecord, users: UserRecord[]): UserRecord | null
   return users.find(u => !u.isParent && u.parentEmail?.toLowerCase() === email) ?? null;
 }
 
-export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
+export function ProfileScreen({ user, focusCall, focusCheckin }: ProfileScreenProps) {
   const { push, pop, open, users, checkinLog, onCheckinSent } = useNav();
   const athlete = user.isParent ? findAthlete(user, users) : null;
   const { dossier, loading } = useDossier(user.isParent ? athlete?.id ?? null : user.id);
@@ -160,8 +160,8 @@ export function ProfileScreen({ user, focusCall }: ProfileScreenProps) {
           {profile.facts && <Fact label="Team · position · grad" value={profile.facts} />}
           {profile.checkinEligible && <Fact label="Last check-in" value={profile.lastCheckin} />}
         </Card>
-        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" emphasize={focusCall ? 'call' : undefined} onText={profile.checkinEligible ? () => setTexting(true) : undefined} /></div>
-        <CheckinSheet user={texting ? user : null} checkinLog={checkinLog} onClose={() => setTexting(false)} onSent={onCheckinSent} />
+        <div style={{ marginTop: 12 }}><ContactActions phone={user.phone} email={user.email} size="lg" emphasize={focusCall ? 'call' : undefined} onText={profile.checkinEligible || focusCheckin ? () => setTexting(true) : undefined} /></div>
+        <CheckinSheet user={texting ? user : null} checkinLog={checkinLog} onClose={() => setTexting(false)} onSent={onCheckinSent} inactive={focusCheckin} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 10 }}>
           <StatBlock label="Emails" value={<CountUp value={profile.stats.emails} />} />
           <StatBlock label="Replies" value={<CountUp value={profile.stats.replies} />} />

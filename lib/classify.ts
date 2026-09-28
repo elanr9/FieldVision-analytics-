@@ -38,7 +38,8 @@ export interface Classification {
  * 1. Demo, ambassador, and admin accounts are comped and excluded from all
  *    metrics regardless of their plan.
  * 2. A full plan with no Stripe subscription and no recorded charge was
- *    granted manually or through a 100 percent off coupon: comped.
+ *    granted manually: comped. A Stripe subscription on a 100 percent off
+ *    coupon is an internal tester: comped and excluded from metrics.
  * 3. A full plan inside the 7 day trial window with no charge yet: trialing.
  * 4. Any other full plan: paying. If the trial window passed and Stripe did
  *    not revoke access, the card was charged (the webhook downgrades the plan
@@ -50,8 +51,9 @@ export function classifyUser(
   profile: ProfileRow,
   sub: SubscriptionRow | undefined,
   now: Date = new Date(),
+  fullyDiscounted = false,
 ): Classification {
-  const flagged = profile.is_demo || profile.is_ambassador || profile.is_admin || profile.is_review_account === true;
+  const flagged = profile.is_demo || profile.is_ambassador || profile.is_admin || profile.is_review_account === true || fullyDiscounted;
   const interval = planInterval(sub?.payment_type ?? null);
 
   if (flagged) {

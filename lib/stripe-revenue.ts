@@ -73,6 +73,35 @@ function hasActiveDiscount(sub: Stripe.Subscription): boolean {
   return (sub.discounts?.length ?? 0) > 0;
 }
 
+function isFullyDiscounted(sub: Stripe.Subscription): boolean {
+  return (sub.discounts ?? []).some(d => typeof d !== 'string' && d.coupon?.percent_off === 100);
+}
+
+/**
+ * Subscription IDs running on a 100 percent off coupon, e.g. internal testers.
+ * Inkbound never records charge amounts, so only Stripe can tell these apart from real payers.
+ */
+export async function loadFullyDiscountedSubscriptionIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const stripe = stripeClient();
+  if (!stripe || keyProblem()) return ids;
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const batch = await stripe.subscriptions.list({
+      status: 'all',
+      limit: 100,
+      starting_after: startingAfter,
+      expand: ['data.discounts'],
+    });
+    for (const sub of batch.data) {
+      if (isFullyDiscounted(sub)) ids.add(sub.id);
+    }
+    if (!batch.has_more || batch.data.length === 0) break;
+    startingAfter = batch.data[batch.data.length - 1].id;
+  }
+  return ids;
+}
+
 async function listAllSucceededPaymentIntents(
   stripe: Stripe,
 ): Promise<Stripe.PaymentIntent[]> {

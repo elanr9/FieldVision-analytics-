@@ -14,6 +14,7 @@ import { OnboardingTab } from '@/components/onboarding/OnboardingTab';
 import { OverviewTab } from '@/components/overview/OverviewTab';
 import { PeopleScreen } from '@/components/people/PeopleScreen';
 import { ProfileScreen } from '@/components/profile/ProfileScreen';
+import { OPEN_USER_EVENT, type OpenUserDetail } from '@/components/PushRegistration';
 import { UsersTab } from '@/components/users/UsersTab';
 import { AppHeader, type HeaderStatItem } from '@/components/shell/AppHeader';
 import { NavContext } from '@/components/shell/nav';
@@ -98,10 +99,22 @@ export default function Dashboard({
     if (!userId) return;
     const user = users.find(u => u.id === userId);
     const focusCall = params.get('focus') === 'call';
-    if (user) push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} focusCall={focusCall} /> });
+    const focusCheckin = params.get('focus') === 'checkin';
+    if (user) push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} focusCall={focusCall} focusCheckin={focusCheckin} /> });
     window.history.replaceState(null, '', window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const onOpenUser = (event: Event) => {
+      const { userId, focus } = (event as CustomEvent<OpenUserDetail>).detail;
+      const user = users.find(u => u.id === userId);
+      if (user) push({ key: 'profile-' + user.id, node: <ProfileScreen user={user} focusCall={focus === 'call'} focusCheckin={focus === 'checkin'} /> });
+    };
+    window.addEventListener(OPEN_USER_EVENT, onOpenUser);
+    return () => window.removeEventListener(OPEN_USER_EVENT, onOpenUser);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
 
   const onStat = (s: HeaderStatItem) => push({ key: 'people-' + s.key, node: <PeopleScreen title={s.title} users={s.users} /> });
 

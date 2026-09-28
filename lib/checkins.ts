@@ -18,6 +18,10 @@ export const CHECKIN_TEXTS: readonly string[] = [
   "Hey {first}! Quick check in from Elan. How's everything going with Inkbound? Hit me back if you're stuck on anything.",
 ];
 
+/** Sent from the 5 days inactive push. {first} is the user's first name. */
+export const INACTIVE_CHECKIN_TEXT =
+  "Hey {first}, it's Elan. I saw you haven't used Inkbound in a couple of days, just wanted to check in and see what's going on and how everything's going.";
+
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function adminClient() {

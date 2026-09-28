@@ -18,6 +18,7 @@ import { createClient } from '@supabase/supabase-js';
  *   call      founder_calls insert
  *   call_soon pg_cron analytics_check_upcoming_calls(), inserted straight into the
  *             table by analytics_notify_upcoming_call() rather than through the route
+ *   inactive  pg_cron daily post to app/api/inactive-check/route.ts, a paying athlete with no app events for 5 days
  *   paywall   product_events onboarding_screen_view s37_paywall
  *   wheel     product_events onboarding_screen_view s37c_spin_wheel or s38_one_time_offer
  *   stalled   pg_cron analytics_check_paywall_stalls(), paywall view with 10 min of nothing after it
@@ -41,10 +42,11 @@ export type NotificationType =
   | 'message'
   | 'video'
   | 'call'
-  | 'call_soon';
+  | 'call_soon'
+  | 'inactive';
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
-  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'payment_failed', 'save', 'reply', 'campaign', 'message', 'video', 'call', 'call_soon',
+  'paywall', 'wheel', 'stalled', 'trial', 'paid', 'cancel', 'payment_failed', 'save', 'reply', 'campaign', 'message', 'video', 'call', 'call_soon', 'inactive',
 ];
 
 /**
@@ -80,6 +82,7 @@ export const NOTIF_DOT: Record<NotificationType, string> = {
   video: 'var(--ink-500)',
   call: 'var(--ink-700)',
   call_soon: 'var(--green-600)',
+  inactive: 'var(--amber-500)',
 };
 
 export interface NotificationRow {
@@ -172,6 +175,8 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
       return { title: `${first} booked a call with Elan`, sub: text(vars.slot) };
     case 'call_soon':
       return { title: `Call with ${first} in 10 minutes`, sub: text(vars.slot) };
+    case 'inactive':
+      return { title: `${text(vars.full) ?? first} hasn't been active for 5 days`, sub: 'Click here to check in with them' };
   }
 }
 

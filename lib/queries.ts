@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, fakeReason, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
+import { loadFullyDiscountedSubscriptionIds } from './stripe-revenue';
 import { deriveOnboardingStatus, resolveFromIntake, type FlowProgress } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
@@ -71,7 +72,7 @@ interface ParentInviteRow {
 export async function loadUsers(): Promise<UserRecord[]> {
   const supabase = adminClient();
 
-  const [profilesRes, subsRes, intakeRes, parentRes, authRes, flowEvents] = await Promise.all([
+  const [profilesRes, subsRes, intakeRes, parentRes, authRes, flowEvents, discountedSubIds] = await Promise.all([
     supabase
       .from('user_profiles')
       .select(
@@ -89,6 +90,10 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase.from('parent_invites').select('player_user_id, parent_email'),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     loadFlowEvents(supabase),
+    loadFullyDiscountedSubscriptionIds().catch(err => {
+      console.error('Stripe discount lookup failed', err);
+      return new Set<string>();
+    }),
   ]);
 
   if (profilesRes.error) throw profilesRes.error;
@@ -133,7 +138,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
   return profiles.map(profile => {
     const sub = subByUser.get(profile.user_id);
     const intake = intakeByUser.get(profile.user_id);
-    const c = classifyUser(profile, sub, now);
+    const fullyDiscounted = Boolean(sub?.stripe_subscription_id && discountedSubIds.has(sub.stripe_subscription_id));
+    const c = classifyUser(profile, sub, now, fullyDiscounted);
 
     const isParent = profile.account_type === 'parent';
     const hasFullPlan = sub?.plan === 'full';

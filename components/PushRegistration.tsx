@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 interface RegistrationToken {
@@ -42,7 +43,18 @@ interface CapacitorGlobal {
   Plugins?: { PushNotifications?: PushNotificationsPlugin };
 }
 
+export const OPEN_USER_EVENT = 'push:open-user';
+
+export interface OpenUserDetail {
+  userId: string;
+  focus?: string;
+}
+
 export function openUserFromPush(userId: string, focus?: string) {
+  if (window.location.pathname === '/') {
+    window.dispatchEvent(new CustomEvent<OpenUserDetail>(OPEN_USER_EVENT, { detail: { userId, focus } }));
+    return;
+  }
   const q = new URLSearchParams({ user: userId });
   if (focus) q.set('focus', focus);
   window.location.assign('/?' + q.toString());
@@ -68,6 +80,7 @@ interface Banner {
  */
 export default function PushRegistration() {
   const [banner, setBanner] = useState<Banner | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const capacitor = (window as Window & { Capacitor?: CapacitorGlobal }).Capacitor;
@@ -110,9 +123,7 @@ export default function PushRegistration() {
         await push.addListener('pushNotificationReceived', notification => {
           showBanner(notification);
           // Dashboard is SSR once — reload so new signups/trials appear in lists.
-          window.setTimeout(() => {
-            window.location.reload();
-          }, 1200);
+          router.refresh();
         }),
       );
       handles.push(
@@ -129,7 +140,7 @@ export default function PushRegistration() {
         void handle.remove();
       }
     };
-  }, []);
+  }, [router]);
 
   if (!banner) return null;
 
