@@ -7,18 +7,20 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { buildConversionReport, type ChurnCase, type ConversionData } from '@/lib/conversion/report';
 import { rangeForDays } from '@/lib/funnel';
 import type { UserRecord } from '@/lib/types';
+import { AgentChat } from './AgentChat';
 import { CaseListScreen } from './CaseListScreen';
 import { FixView } from './FixView';
 import { PatternsView } from './PatternsView';
 import { WhyView } from './WhyView';
 
-type View = 'why' | 'patterns' | 'fix';
+type View = 'why' | 'patterns' | 'fix' | 'agent';
 type Range = '30' | '90' | 'all';
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'why', label: 'Why they leave' },
   { key: 'patterns', label: 'Patterns' },
   { key: 'fix', label: 'Fix plan' },
+  { key: 'agent', label: 'Agent' },
 ];
 
 const RANGES: { key: Range; label: string }[] = [
@@ -83,6 +85,7 @@ export function ConversionTab({ data, users, push }: ConversionTabProps) {
         {view === 'why' && <WhyView report={report} caption={RANGE_CAPTION[range]} drill={drill} />}
         {view === 'patterns' && <PatternsView report={report} drill={drill} />}
         {view === 'fix' && <FixView report={report} range={range} drill={drill} />}
+        {view === 'agent' && <AgentChat range={range} />}
       </Fade>
     </div>
   );

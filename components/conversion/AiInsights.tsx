@@ -6,6 +6,7 @@ import { SectionHeading } from '@/components/ui/SectionHeading';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { ChurnInsights } from '@/lib/conversion/ai';
 import type { Drill } from './ConversionTab';
+import { RepoPrompt } from './RepoPrompt';
 
 export interface AiInsightsProps {
   /** 30, 90 or all, matches the tab's range toggle */
@@ -156,6 +157,7 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
                 </ol>
               )}
               {f.problems.length > 0 && <p style={{ margin: '6px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>Fixes: {f.problems.join(', ')}</p>}
+              <RepoPrompt fix={f} problems={insights.problems} range={range} />
             </Card>
           ))}
         </div>

@@ -63,6 +63,16 @@ export interface CaseInsight {
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const insightsCache = new Map<string, { value: ChurnInsights; at: number }>();
+
+/** The last diagnosis per range, so the agent chat can refer to the same problems and fixes the user sees. */
+export function cachedInsights(rangeKey: string): ChurnInsights | null {
+  return insightsCache.get(rangeKey)?.value ?? null;
+}
+
+/** Cache key shared by the diagnosis and the chat. */
+export function insightsKey(range: DateRange | null): string {
+  return range ? `${range.from.toISOString().slice(0, 10)}..${range.to.toISOString().slice(0, 10)}` : 'all';
+}
 const caseCache = new Map<string, { value: CaseInsight; at: number }>();
 
 function apiKey(): string | null {
@@ -147,6 +157,27 @@ const INSIGHTS_SCHEMA = {
     },
   },
 } as const;
+
+const REPO_PROMPT_SCHEMA = {
+  name: 'repo_prompt',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['repo', 'prompt'],
+    properties: {
+      repo: { type: 'string', enum: ['inkbound-web', 'inkbound-mobile', 'both', 'supabase'] },
+      prompt: { type: 'string' },
+    },
+  },
+} as const;
+
+/** How the athlete apps are laid out, so repo prompts point at real places. */
+const REPO_CONTEXT = `The product code lives in two repos that share one Supabase project:
+- inkbound-web: Next.js 16 App Router, TypeScript. Onboarding flow in src/flow (flowConfig.ts, answers.ts, analytics.ts, sections/sectionN.tsx, screen ids like s37_paywall). App routes in src/app (onboarding, signup, login, parent, v). Feature code in src/features, shared UI in src/components, helpers in src/lib. Supabase edge functions in supabase/functions (stripe-webhook, inkbound-create-checkout, inkbound-confirm-checkout, inkbound-start-pro, cancel-subscription, resume-subscription, retention-offer, subscription-details, sync-subscription, billing-portal, send-coach-emails, auto-send-campaigns, campaign-followups, generate-next-campaign, send-notification-email, parent-invite-send, inkbound-parent-reminders, recruiting-chat, nl-school-search).
+- inkbound-mobile: Expo 57, React Native 0.86, TypeScript. Same src/flow structure mirroring the web flow screen for screen, src/app for screens, src/components, src/lib, src/theme.
+- Analytics events are written to the product_events table (onboarding_screen_view, onboarding_answer, page_view, feature_use, outreach_compose_open, outreach_email_send, highlight_open, school_view). Subscriptions live in user_subscriptions, profiles in user_profiles, trial start in user_profiles.trial_started_at.
+Hard rule for any prompt: never modify edge functions or code related to highlight videos (video jobs, clips, video editor).`;
 
 const CASE_SCHEMA = {
   name: 'case_insight',
@@ -275,7 +306,9 @@ interface ChatResponse {
   error?: { message?: string };
 }
 
-async function chat<T>(system: string, user: string, schema: typeof INSIGHTS_SCHEMA | typeof CASE_SCHEMA): Promise<T> {
+type JsonSchema = typeof INSIGHTS_SCHEMA | typeof CASE_SCHEMA | typeof REPO_PROMPT_SCHEMA;
+
+async function chat<T>(system: string, user: string, schema: JsonSchema): Promise<T> {
   const key = apiKey();
   if (!key) throw new Error('OPENAI_API_KEY is not set');
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -298,13 +331,9 @@ async function chat<T>(system: string, user: string, schema: typeof INSIGHTS_SCH
   return JSON.parse(content) as T;
 }
 
-function rangeKey(range: DateRange | null): string {
-  return range ? `${range.from.toISOString().slice(0, 10)}..${range.to.toISOString().slice(0, 10)}` : 'all';
-}
-
 /** Whole funnel diagnosis and fix plan. Cached for six hours per range. */
 export async function generateChurnInsights(data: ConversionData, range: DateRange | null, refresh = false, context: InsightContext = {}): Promise<ChurnInsights> {
-  const key = rangeKey(range);
+  const key = insightsKey(range);
   const cached = insightsCache.get(key);
   if (!refresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
 
@@ -334,6 +363,126 @@ export async function generateChurnInsights(data: ConversionData, range: DateRan
   };
   insightsCache.set(key, { value, at: Date.now() });
   return value;
+}
+
+export interface RepoPrompt {
+  repo: 'inkbound-web' | 'inkbound-mobile' | 'both' | 'supabase';
+  prompt: string;
+  model: string;
+  generatedAt: string;
+}
+
+const repoPromptCache = new Map<string, { value: RepoPrompt; at: number }>();
+
+/**
+ * A paste ready prompt for Cursor or Claude Code inside the Inkbound repos that implements one fix.
+ * Includes the evidence, the exact screens, the acceptance criteria, and the analytics events to add.
+ */
+export async function generateRepoPrompt(fix: ChurnFix, problems: ChurnProblem[], briefingSummary: string, refresh = false): Promise<RepoPrompt> {
+  const key = fix.title + '|' + fix.where;
+  const cached = repoPromptCache.get(key);
+  if (!refresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+
+  const related = problems.filter(p => fix.problems.includes(p.title));
+  const prompt = [
+    'Write one prompt that Elan can paste into Cursor or Claude Code, opened in the Inkbound repo, to implement the fix below. Pick the repo (web, mobile, both, or supabase for edge function and schema work).',
+    'The prompt must: start with one paragraph of context (what the data showed, with the numbers); state the exact change with screen ids, files or folders to look in, and the new behavior; list acceptance criteria; name the product_events to add so the analytics dashboard can measure the change; say what not to touch; ask the agent to run typecheck and tests before finishing. Keep it under 450 words, plain English, no dashes.',
+    '',
+    REPO_CONTEXT,
+    '',
+    `## Fix\nTitle: ${fix.title}\nWhere: ${fix.where}\nAction: ${fix.action}\nWhy: ${fix.why}\nImpact: ${fix.impact}\nSteps:\n${fix.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+    '',
+    related.length ? `## Problems it fixes\n${related.map(p => `${p.title} (${p.when}, ${p.userIds.length} people): ${p.why}\nEvidence: ${p.evidence.join('; ')}`).join('\n\n')}` : '',
+    '',
+    `## Data summary\n${briefingSummary}`,
+  ].join('\n');
+
+  const raw = await chat<Pick<RepoPrompt, 'repo' | 'prompt'>>(SYSTEM_PROMPT, prompt, REPO_PROMPT_SCHEMA);
+  const value: RepoPrompt = { ...raw, model: model(), generatedAt: new Date().toISOString() };
+  repoPromptCache.set(key, { value, at: Date.now() });
+  return value;
+}
+
+export interface AgentMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const AGENT_SYSTEM_PROMPT = `You are Elan's product and go to market partner at Inkbound. Inkbound is a college soccer recruiting app: athletes onboard, start a 7 day trial with a card on file, then the app sends coach emails for them, tracks opens and replies, and makes highlight videos. Today the business is around $6k ARR with roughly 200 accounts. The product is strong; the two problems are that not enough athletes hear about it and small product leaks lose the ones who do.
+
+You have the full conversion dataset below: funnel, onboarding screens, paywall, every trial with what the athlete did, Stripe billing facts, and rule based verdicts. Use it. Quote counts and names when they help. Never invent numbers.
+
+How you work:
+- Answer the question asked. Be direct, specific, and short. Short paragraphs, plain English, no jargon, no dashes in your prose, no bullet lists unless the answer really is a list.
+- When asked for product changes, name the screen id or file area and the exact new behavior.
+- When asked for go to market, think like an operator with no budget: who the buyer is (parents pay, athletes use), where they already are (club teams, tournaments, ID camps, coaches, TikTok, Instagram, parent group chats), referral loops built into the product, ambassadors, partnerships with clubs, content that ranks. Give concrete plays with a first step Elan can do today.
+- When Elan asks for a prompt, or when a change is clearly code, write a paste ready prompt for Cursor or Claude Code inside a fenced code block, following the repo notes below. One prompt per fenced block. Prompts include context with numbers, exact change, acceptance criteria, product_events to add, what not to touch, and a request to run typecheck and tests.
+- When asked for a message to an athlete or parent, write it from Elan in first person, ready to send, no placeholders.
+- Push back when the data disagrees with the idea. Say what you would do instead.
+
+${REPO_CONTEXT}`;
+
+interface StreamChunk {
+  choices?: { delta?: { content?: string | null } }[];
+}
+
+/**
+ * Streams the agent's reply as plain text. The briefing is the same data the diagnosis reads,
+ * so the conversation and the dashboard never disagree.
+ */
+export async function streamAgentReply(messages: AgentMessage[], briefing: string, insights: ChurnInsights | null): Promise<ReadableStream<Uint8Array>> {
+  const key = apiKey();
+  if (!key) throw new Error('OPENAI_API_KEY is not set');
+
+  const system = [
+    AGENT_SYSTEM_PROMPT,
+    '',
+    insights
+      ? `## Current AI diagnosis\nHeadline: ${insights.headline}\nProblems: ${insights.problems.map(p => `${p.title} (${p.when}, ${p.userIds.length} people)`).join('; ')}\nFixes: ${insights.fixes.map((f, i) => `${i + 1}. ${f.title} at ${f.where}`).join('; ')}`
+      : '',
+    '',
+    '## Data',
+    briefing,
+  ].join('\n');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: model(),
+      temperature: 0.5,
+      stream: true,
+      messages: [{ role: 'system', content: system }, ...messages.slice(-30).map(m => ({ role: m.role, content: m.content }))],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const json = (await res.json().catch(() => ({}))) as ChatResponse;
+    throw new Error(json.error?.message ?? `OpenAI returned ${res.status}`);
+  }
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = '';
+  return res.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const text = (JSON.parse(payload) as StreamChunk).choices?.[0]?.delta?.content;
+            if (text) controller.enqueue(encoder.encode(text));
+          } catch {
+            // A partial JSON frame; the rest arrives with the next chunk.
+          }
+        }
+      },
+    }),
+  );
 }
 
 /** One athlete's story, why and when they left, and what to send them. Cached for six hours. */
