@@ -10,24 +10,26 @@ const ONBOARDING_ACTIVE_MS = 60 * 60 * 1000;
 
 const PAGE_SIZE = 1000;
 const PAYWALL_SCREEN_ID = 's37_paywall';
-const ABOUT_YOU_SCREEN_ID = 's30_about_you';
-
 interface FlowEventRow {
   user_id: string | null;
   name: string;
-  properties: { screen?: unknown; fullName?: unknown } | null;
+  properties: Record<string, unknown> | null;
 }
 
 interface FlowEvents {
   progress: Map<string, FlowProgress>;
-  /** Name typed on the about-you screen, for profiles the app has not named yet. */
-  names: Map<string, string>;
+  /** Every onboarding answer merged per user, for profiles the new flow never wrote to. */
+  answers: Map<string, Record<string, unknown>>;
+}
+
+function answerString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** What the new onboarding flow's events say about each user. */
 async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise<FlowEvents> {
   const progress = new Map<string, FlowProgress>();
-  const names = new Map<string, string>();
+  const answers = new Map<string, Record<string, unknown>>();
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('product_events')
@@ -42,12 +44,11 @@ async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise
       const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
       if (screen === PAYWALL_SCREEN_ID) progress.set(row.user_id, 'reached_paywall');
       else if (!progress.has(row.user_id)) progress.set(row.user_id, 'started');
-      const fullName = row.properties?.fullName;
-      if (row.name === 'onboarding_answer' && screen === ABOUT_YOU_SCREEN_ID && typeof fullName === 'string' && fullName.trim()) {
-        names.set(row.user_id, fullName.trim());
+      if (row.name === 'onboarding_answer' && row.properties) {
+        answers.set(row.user_id, { ...answers.get(row.user_id), ...row.properties });
       }
     }
-    if (rows.length < PAGE_SIZE) return { progress, names };
+    if (rows.length < PAGE_SIZE) return { progress, answers };
   }
 }
 
@@ -144,7 +145,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
     const isParent = profile.account_type === 'parent';
     const hasFullPlan = sub?.plan === 'full';
     const onboarding = deriveOnboardingStatus(intake, profile.trial_started_at, hasFullPlan, flowEvents.progress.get(profile.user_id) ?? 'none');
-    const name = profile.full_name ?? flowEvents.names.get(profile.user_id) ?? 'Unknown';
+    const answers = flowEvents.answers.get(profile.user_id) ?? {};
+    const name = profile.full_name ?? answerString(answers.fullName) ?? 'Unknown';
     const email = resolveEmail(profile);
     const lastSignInAt = lastSignInByUser.get(profile.user_id) ?? null;
 
@@ -171,10 +173,10 @@ export async function loadUsers(): Promise<UserRecord[]> {
       id: profile.user_id,
       name,
       email,
-      phone: normalizePhone(profile.phone_number ?? intake?.phone_number ?? null),
-      team: profile.current_team ?? intake?.club_team ?? null,
-      position: profile.positions?.[0] ?? intake?.position ?? null,
-      gradYear: profile.graduation_year ?? intake?.grad_year ?? null,
+      phone: normalizePhone(profile.phone_number ?? intake?.phone_number ?? answerString(answers.phone)),
+      team: profile.current_team ?? intake?.club_team ?? answerString(answers.clubTeam),
+      position: profile.positions?.[0] ?? intake?.position ?? answerString(answers.positionPrimary),
+      gradYear: profile.graduation_year ?? intake?.grad_year ?? (typeof answers.gradYear === 'number' ? answers.gradYear : null),
       parentName: intake?.parent_first_name ?? null,
       parentEmail: parentEmailByUser.get(profile.user_id) ?? null,
       signupDate: profile.created_at,

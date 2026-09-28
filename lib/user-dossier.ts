@@ -309,6 +309,88 @@ export function formatHeight(inches: number | null): string | null {
   return heightLabel(inches);
 }
 
+function answerString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().replace(/_/g, ' ') : null;
+}
+
+function answerNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function answerList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** The new onboarding flow only logs answers as events, so map them onto the intake shape. */
+function backgroundFromFlowAnswers(answers: Record<string, unknown>): DossierBackground | null {
+  if (Object.keys(answers).length === 0) return null;
+  const heightFt = answerNumber(answers.heightFt);
+  const gender = answerString(answers.gender);
+  const studentType = answerString(answers.studentType);
+  const invite = answerString(answers.invite);
+  const offers = answerString(answers.offers);
+  return {
+    clubTeam: answerString(answers.clubTeam),
+    position: answerString(answers.positionPrimary),
+    secondaryPosition: answerString(answers.positionSecondary),
+    gradYear: answerNumber(answers.gradYear),
+    highSchool: answerString(answers.highSchool),
+    homeCity: answerString(answers.hometown),
+    homeState: answerString(answers.homeState),
+    heightIn: heightFt === null ? null : heightFt * 12 + (answerNumber(answers.heightIn) ?? 0),
+    weightLb: answerNumber(answers.weightLb),
+    dominantFoot: answerString(answers.strongFoot),
+    gpaUnweighted: answerNumber(answers.gpa),
+    gpaWeighted: null,
+    satTotal: answerNumber(answers.satTotal),
+    actComposite: answerNumber(answers.actComposite),
+    leagueLevel: answerString(answers.league),
+    starterStatus: null,
+    intendedMajors: answerList(answers.majors),
+    divisionPreference: [],
+    preferredStates: [],
+    dreamSchools: null,
+    recruitingStartStatus: null,
+    schoolsContactedCount: null,
+    schoolsRespondedCount: Array.isArray(answers.repliedSchools) ? answers.repliedSchools.length : null,
+    offersCount: offers === 'not yet' ? 0 : null,
+    highlightVideoUrl: null,
+    sport: gender === 'mens' ? 'Mens Soccer' : gender === 'womens' ? 'Womens Soccer' : null,
+    motivation: null,
+    whyCollegeSoccer: null,
+    usedOtherServices: null,
+    heardAboutUs: answerString(answers.heardFrom),
+    birthday: null,
+    recruitingClarity: null,
+    hasEmailedCoaches: answerString(answers.emailed),
+    outreachChallenge: null,
+    highlightVideosCount: null,
+    highlightChallenge: null,
+    weeklyTimeAvailable: null,
+    recruitingStressLevel: null,
+    educationLevel: studentType === 'college' ? 'College' : studentType === 'high school' ? 'High school' : null,
+    collegeName: null,
+    schoolSizePreference: null,
+    settingPreference: null,
+    priorityRankings: answerList(answers.goals),
+    proAspiration: null,
+    naiaJucoPathInterest: null,
+    parentInviteChoice: invite === null ? null : invite === 'not right now' ? 'No' : 'Yes',
+  };
+}
+
+/** Intake values win; flow answers fill whatever the intake left empty. */
+function mergeBackgrounds(intake: DossierBackground | null, flow: DossierBackground | null): DossierBackground | null {
+  if (!intake || !flow) return intake ?? flow;
+  const merged = { ...flow } as Record<keyof DossierBackground, unknown>;
+  for (const key of Object.keys(intake) as (keyof DossierBackground)[]) {
+    const value = intake[key];
+    const empty = value === null || value === '' || (Array.isArray(value) && value.length === 0);
+    if (!empty) merged[key] = value;
+  }
+  return merged as DossierBackground;
+}
+
 /** Loads the founder-facing dossier for one athlete from FieldVision tables. */
 export async function loadUserDossier(userId: string): Promise<UserDossier> {
   const supabase = adminClient();
@@ -328,6 +410,7 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
     bookingsRes,
     listsRes,
     campaignEmailsRes,
+    flowAnswersRes,
   ] = await Promise.all([
     supabase
       .from('user_onboarding_intake')
@@ -395,6 +478,12 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
       .eq('status', 'sent')
       .order('sent_at', { ascending: true })
       .limit(3000),
+    supabase
+      .from('product_events')
+      .select('properties')
+      .eq('user_id', userId)
+      .eq('name', 'onboarding_answer')
+      .order('created_at', { ascending: true }),
   ]);
 
   const intake = (intakeRes.data ?? null) as IntakeRow | null;
@@ -530,7 +619,12 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
 
   const campaigns = buildCampaigns(lists, campaignEmails, views, schoolNameById);
 
-  const background: DossierBackground | null = intake
+  const flowAnswers = ((flowAnswersRes.data ?? []) as { properties: Record<string, unknown> | null }[]).reduce<Record<string, unknown>>(
+    (merged, row) => ({ ...merged, ...row.properties }),
+    {},
+  );
+
+  const intakeBackground: DossierBackground | null = intake
     ? {
         clubTeam: intake.club_team,
         position: intake.position,
@@ -580,6 +674,8 @@ export async function loadUserDossier(userId: string): Promise<UserDossier> {
         parentInviteChoice: intake.parent_invite_choice,
       }
     : null;
+
+  const background = mergeBackgrounds(intakeBackground, backgroundFromFlowAnswers(flowAnswers));
 
   return {
     background,
