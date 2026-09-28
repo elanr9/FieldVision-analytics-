@@ -25,14 +25,18 @@ function buildTimeline(item: ChurnCase): Moment[] {
   const l = item.lifecycle;
   const e = l.engagement;
   const moments: Moment[] = [{ at: l.signupAt, label: 'Created the account' }];
-  if (l.onboarding === 'completed' || l.trialStartAt) moments.push({ at: l.trialStartAt ?? l.signupAt, label: 'Finished onboarding' });
-  if (l.trialStartAt) moments.push({ at: l.trialStartAt, label: l.planLabel ? `Started the trial on ${l.planLabel}` : 'Started the trial', tone: 'good' });
+  if (l.trialStartAt) {
+    moments.push({ at: l.trialStartAt, label: 'Finished onboarding' });
+    moments.push({ at: l.trialStartAt, label: l.planLabel ? `Started the trial on ${l.planLabel}` : 'Started the trial', tone: 'good' });
+  } else if (l.onboarding === 'completed') {
+    moments.push({ at: l.signupAt, label: 'Finished onboarding, stopped at the paywall' });
+  }
   if (e.firstActiveAt) moments.push({ at: e.firstActiveAt, label: 'First activity' });
-  if (e.lastActiveAt && e.lastActiveAt !== e.firstActiveAt) moments.push({ at: e.lastActiveAt, label: 'Last activity' });
-  if (l.firstChargeAt) moments.push({ at: l.firstChargeAt, label: `Charged ${l.stripe?.chargedCents ? money(l.stripe.chargedCents) : ''}`.trim(), tone: 'good' });
+  if (e.lastActiveAt && e.lastActiveAt !== e.firstActiveAt) moments.push({ at: e.lastActiveAt, label: 'Last activity in the window' });
+  if (l.firstChargeAt) moments.push({ at: l.firstChargeAt, label: l.stripe?.chargedCents ? `Charged ${money(l.stripe.chargedCents)}` : 'Charged', tone: 'good' });
   if (l.canceledAt) moments.push({ at: l.canceledAt, label: l.outcome === 'payment_failed' ? 'Card failed' : 'Canceled', tone: 'bad' });
   else if (l.outcome === 'trial_expired' && l.trialEndAt) moments.push({ at: l.trialEndAt, label: 'Trial expired, no charge', tone: 'bad' });
-  return moments.sort((a, b) => a.at.localeCompare(b.at));
+  return moments.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderTop: '1px solid var(--border-subtle)', font: '400 13px/1.5 var(--font-sans)' };
@@ -64,12 +68,19 @@ export function ChurnCaseScreen({ item }: ChurnCaseScreenProps) {
         <CaseAi item={item} />
 
         <div>
-          <SectionHeading>What they did {l.trialStartAt ? 'during the trial' : 'after signing up'}</SectionHeading>
+          <SectionHeading>{l.trialStartAt ? 'First 7 days of the trial' : 'Since signing up'}</SectionHeading>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
             <StatBlock label="Emails" value={e.emailsSent} />
             <StatBlock label="Replies" value={e.repliesReceived} />
             <StatBlock label="Videos" value={e.videosCreated} />
-            <StatBlock label="Days active" value={e.activeDays} />
+            <StatBlock label="Active" value={e.activeDays === 1 ? '1 day' : `${e.activeDays} days`} />
+          </div>
+          <SectionHeading style={{ marginTop: 14 }}>All time</SectionHeading>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
+            <StatBlock label="Emails" value={e.lifetime.emailsSent} />
+            <StatBlock label="Replies" value={e.lifetime.repliesReceived} />
+            <StatBlock label="Campaigns" value={e.lifetime.campaignsCreated} />
+            <StatBlock label="Videos" value={e.lifetime.videosPublished ? `${e.lifetime.videosCreated} · ${e.lifetime.videosPublished} live` : e.lifetime.videosCreated} />
           </div>
         </div>
 
@@ -82,7 +93,7 @@ export function ChurnCaseScreen({ item }: ChurnCaseScreenProps) {
                 <span style={{ color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shortDate(m.at)}</span>
               </div>
             ))}
-            {l.daysToCancel !== null && <p style={{ margin: 0, padding: '8px 0 4px', borderTop: row.borderTop, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>Canceled {days(l.daysToCancel)} after the trial started{e.daysSilentBeforeEnd !== null && e.daysSilentBeforeEnd > 0 ? `, quiet for the last ${days(e.daysSilentBeforeEnd)}` : ''}.</p>}
+            {l.daysToCancel !== null && <p style={{ margin: 0, padding: '8px 0 4px', borderTop: row.borderTop, font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{l.outcome === 'payment_failed' ? 'Card failed' : 'Canceled'} {days(l.daysToCancel)} after the trial started{e.daysSilentBeforeEnd !== null && e.daysSilentBeforeEnd > 0 ? `, quiet for the last ${days(e.daysSilentBeforeEnd)}` : ''}.</p>}
           </Card>
         </div>
 
@@ -92,7 +103,7 @@ export function ChurnCaseScreen({ item }: ChurnCaseScreenProps) {
             {l.stripe ? (
               <>
                 <div style={{ ...row, borderTop: 0 }}><span>Status</span><span style={{ color: 'var(--text-secondary)' }}>{l.stripe.status.replace(/_/g, ' ')}</span></div>
-                <div style={row}><span>Charged</span><span style={{ color: 'var(--text-secondary)' }}>{money(l.stripe.chargedCents)}{l.stripe.refunded ? ' · refunded' : ''}</span></div>
+                <div style={row}><span>Charged</span><span style={{ color: 'var(--text-secondary)' }}>{l.stripe.chargedCents ? money(l.stripe.chargedCents) : 'Never charged'}{l.stripe.refunded ? ' · refunded' : ''}</span></div>
                 {l.stripe.cancelReason && <div style={row}><span>Cancel reason</span><span style={{ color: 'var(--text-secondary)' }}>{l.stripe.cancelReason.replace(/_/g, ' ')}</span></div>}
                 {l.stripe.cancelFeedback && <div style={row}><span>Their feedback</span><span style={{ color: 'var(--text-secondary)' }}>{l.stripe.cancelFeedback.replace(/_/g, ' ')}</span></div>}
                 {l.stripe.cancelComment && <p style={{ margin: 0, padding: '8px 0', borderTop: row.borderTop, font: '500 13px/1.5 var(--font-sans)', fontStyle: 'italic' }}>&ldquo;{l.stripe.cancelComment}&rdquo;</p>}

@@ -73,8 +73,14 @@ export interface LifecycleSubRow {
 
 /** Timestamps of everything one user did, gathered from the activity tables. */
 export interface ActivityRows {
+  /** Every sent email, including the follow ups the app sends on its own */
   emailSentAt: string[];
+  /** Only the first email of each thread, the sends the athlete actually triggered */
+  originalEmailAt: string[];
   replyAt: string[];
+  /** Campaigns the athlete approved and sent; app generated drafts waiting for approval do not count */
+  campaignSentAt: string[];
+  /** Every campaign row, for the all time totals */
   listCreatedAt: string[];
   projectCreatedAt: string[];
   videosPublished: number;
@@ -83,17 +89,27 @@ export interface ActivityRows {
 
 export const NO_ACTIVITY: ActivityRows = {
   emailSentAt: [],
+  originalEmailAt: [],
   replyAt: [],
+  campaignSentAt: [],
   listCreatedAt: [],
   projectCreatedAt: [],
   videosPublished: 0,
   eventAt: [],
 };
 
-/** What the user did inside their decision window (trial start to cancel, or signup to now). */
+/** product_events only exist from this day, so earlier windows cannot use them for activity. */
+const EVENTS_SINCE = '2026-08-10';
+
+/** outreach_lists statuses that mean the athlete approved the campaign and it went out. */
+const SENT_LIST_STATUSES = new Set(['sent', 'follow_up_1_sent', 'completed']);
+
+/** What the user did inside their decision window (signup to the end of the trial or the cancel, whichever came first). */
 export interface Engagement {
+  /** Emails that went out in the window, including automated follow ups */
   emailsSent: number;
   repliesReceived: number;
+  /** Campaigns the athlete approved and sent in the window */
   campaignsCreated: number;
   videosCreated: number;
   videosPublished: number;
@@ -105,6 +121,16 @@ export interface Engagement {
   daysSilentBeforeEnd: number | null;
   /** Total activity across the whole account, not just the window */
   lifetimeActions: number;
+  /** Whole account totals, because campaigns keep sending for weeks after the trial */
+  lifetime: LifetimeTotals;
+}
+
+export interface LifetimeTotals {
+  emailsSent: number;
+  repliesReceived: number;
+  campaignsCreated: number;
+  videosCreated: number;
+  videosPublished: number;
 }
 
 export interface LifecycleStripe {
@@ -153,10 +179,6 @@ function adminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function ms(isoDate: string | null | undefined): number | null {
-  return isoDate ? new Date(isoDate).getTime() : null;
-}
-
 function daysBetween(fromIso: string, toIso: string): number {
   return Math.round(((new Date(toIso).getTime() - new Date(fromIso).getTime()) / DAY_MS) * 10) / 10;
 }
@@ -172,15 +194,14 @@ function planFor(sub: LifecycleSubRow | undefined, stripe: StripeSubFacts | null
 }
 
 /**
- * Without Stripe, the closest thing to a cancel date. expires_at holds the period end the app
- * scheduled the cancel for; updated_at is when the row was last touched, which for canceled rows
- * is often a later cleanup pass. The earliest one on or after the trial start wins.
+ * Without Stripe there is no honest cancel timestamp: expires_at is the period end the cancel was
+ * scheduled for and updated_at is often a later cleanup pass. The only usable case is a cancel at
+ * period end, where expires_at sits exactly on the trial end and access really ended there.
  */
 function supabaseCanceledAt(sub: LifecycleSubRow | undefined, trialStartAt: string | null): string | null {
-  if (!sub || sub.payment_type !== 'canceled') return null;
-  const floor = ms(trialStartAt) ?? 0;
-  const candidates = [sub.expires_at, sub.updated_at].filter((d): d is string => d !== null && new Date(d).getTime() >= floor);
-  return candidates.sort()[0] ?? sub.updated_at;
+  if (!sub || sub.payment_type !== 'canceled' || !sub.expires_at || !trialStartAt) return null;
+  const gapDays = (new Date(sub.expires_at).getTime() - new Date(trialStartAt).getTime()) / DAY_MS;
+  return gapDays >= 6.5 && gapDays <= 7.5 ? sub.expires_at : null;
 }
 
 function planLabelFor(plan: string | null): string | null {
@@ -199,11 +220,12 @@ function buildEngagement(rows: ActivityRows, fromIso: string, toIso: string): En
 
   const emails = inWindow(rows.emailSentAt);
   const replies = inWindow(rows.replyAt);
-  const lists = inWindow(rows.listCreatedAt);
+  const campaigns = inWindow(rows.campaignSentAt);
   const projects = inWindow(rows.projectCreatedAt);
-  const events = inWindow(rows.eventAt);
-
-  const stamps = [...emails, ...lists, ...projects, ...events].sort();
+  // Automated follow ups and app generated drafts are not the athlete showing up, so activity days
+  // come from what they did themselves. Events only count once the apps started recording them.
+  const events = fromIso >= EVENTS_SINCE ? inWindow(rows.eventAt) : [];
+  const stamps = [...inWindow(rows.originalEmailAt), ...campaigns, ...projects, ...events].sort();
   const days = new Set(stamps.map(dayOf));
   const first = stamps[0] ?? null;
   const last = stamps[stamps.length - 1] ?? null;
@@ -211,14 +233,21 @@ function buildEngagement(rows: ActivityRows, fromIso: string, toIso: string): En
   return {
     emailsSent: emails.length,
     repliesReceived: replies.length,
-    campaignsCreated: lists.length,
+    campaignsCreated: campaigns.length,
     videosCreated: projects.length,
     videosPublished: rows.videosPublished,
     activeDays: days.size,
     firstActiveAt: first,
     lastActiveAt: last,
     daysSilentBeforeEnd: last ? Math.max(0, Math.round((to - new Date(last).getTime()) / DAY_MS)) : null,
-    lifetimeActions: rows.emailSentAt.length + rows.listCreatedAt.length + rows.projectCreatedAt.length + rows.eventAt.length,
+    lifetimeActions: rows.originalEmailAt.length + rows.campaignSentAt.length + rows.projectCreatedAt.length + rows.eventAt.length,
+    lifetime: {
+      emailsSent: rows.emailSentAt.length,
+      repliesReceived: rows.replyAt.length,
+      campaignsCreated: rows.campaignSentAt.length,
+      videosCreated: rows.projectCreatedAt.length,
+      videosPublished: rows.videosPublished,
+    },
   };
 }
 
@@ -248,12 +277,19 @@ function resolveOutcome({ user, sub, stripe }: OutcomeInput): { outcome: Outcome
 
   switch (user.status) {
     case 'paying': {
-      if (!charged) warnings.push('Counted as paying but no charge is recorded in Supabase or Stripe');
-      if (stripe && (stripe.status === 'canceled' || stripe.status === 'unpaid')) {
-        warnings.push(`Supabase says full plan, Stripe says ${stripe.status}`);
-        return { outcome: stripe.paymentFailed ? 'payment_failed' : charged ? 'paid_churned' : 'canceled_in_trial', warnings };
+      if (stripe) {
+        // Stripe is the truth for anyone it knows about: a subscription already set to cancel has left.
+        const leaving = stripe.status === 'canceled' || stripe.status === 'unpaid' || stripe.status === 'incomplete_expired' || stripe.cancelAtPeriodEnd;
+        if (leaving) {
+          if (stripe.status !== 'canceled' || !stripe.cancelAtPeriodEnd) warnings.push(`Supabase says full plan, Stripe says ${stripe.cancelAtPeriodEnd ? 'canceling at period end' : stripe.status}`);
+          return { outcome: stripe.paymentFailed ? 'payment_failed' : charged ? 'paid_churned' : 'canceled_in_trial', warnings };
+        }
+        if (stripe.paymentFailed) return { outcome: 'payment_failed', warnings };
+        if (stripe.status === 'trialing') return { outcome: 'still_trialing', warnings };
+        if (!charged && stripe.status === 'active') warnings.push('Stripe subscription is active but no successful charge was found');
+        return { outcome: 'converted', warnings };
       }
-      if (stripe?.paymentFailed) return { outcome: 'payment_failed', warnings };
+      if (!charged) warnings.push('Counted as paying but no charge is recorded in Supabase and Stripe has no matching subscription');
       return { outcome: 'converted', warnings };
     }
     case 'trialing':
@@ -294,21 +330,20 @@ export function buildLifecycle(
   const trialStartAt = user.trialStartedAt ?? (stripe?.trialEndAt ? new Date(new Date(stripe.trialEndAt).getTime() - TRIAL_MS).toISOString() : null);
   const trialEndAt = stripe?.trialEndAt ?? (trialStartAt ? new Date(new Date(trialStartAt).getTime() + TRIAL_MS).toISOString() : null);
 
-  const canceledAt =
-    outcome === 'paid_churned' || outcome === 'canceled_in_trial' || outcome === 'payment_failed' || outcome === 'refunded'
-      ? stripe?.canceledAt ?? supabaseCanceledAt(sub, trialStartAt)
-      : null;
+  const left = outcome === 'paid_churned' || outcome === 'canceled_in_trial' || outcome === 'payment_failed' || outcome === 'refunded';
+  const canceledAt = left ? stripe?.canceledAt ?? supabaseCanceledAt(sub, trialStartAt) : null;
+  if (left && !canceledAt) warnings.push('Cancel date unknown, Stripe has no matching subscription');
 
   const charged = (sub?.amount_cents ?? 0) > 0 || (stripe?.chargedCents ?? 0) > 0;
-  const firstChargeAt = charged ? sub?.paid_at ?? null : null;
+  // paid_at is stamped when the subscription is created, so only a Stripe charge dates the payment.
+  const firstChargeAt = charged ? stripe?.firstChargeAt ?? null : null;
 
+  // The decision window runs from signup (campaigns get built before trial_started_at is stamped)
+  // to the end of the trial or the cancel, whichever came first, the same for paid and lost.
   const nowIso = now.toISOString();
-  const windowStart = trialStartAt ?? user.signupDate;
-  const windowEndCandidates = [canceledAt, outcome === 'trial_expired' ? trialEndAt : null, outcome === 'converted' ? trialEndAt : null].filter(
-    (d): d is string => d !== null,
-  );
-  const windowEnd = windowEndCandidates.length > 0 ? windowEndCandidates.sort()[0] : nowIso;
-  const engagement = buildEngagement(rows, windowStart, windowEnd < windowStart ? nowIso : windowEnd);
+  const windowStart = user.signupDate;
+  const windowEnd = [canceledAt, trialEndAt].filter((d): d is string => d !== null && d > windowStart).sort()[0] ?? nowIso;
+  const engagement = buildEngagement(rows, windowStart, windowEnd > nowIso ? nowIso : windowEnd);
 
   const daysToCancel = trialStartAt && canceledAt ? Math.max(0, daysBetween(trialStartAt, canceledAt)) : null;
   if (outcome === 'canceled_in_trial' && daysToCancel !== null && daysToCancel > 8) {
@@ -389,7 +424,7 @@ async function pageAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{
 function rowsFor(map: Map<string, ActivityRows>, userId: string): ActivityRows {
   let rows = map.get(userId);
   if (!rows) {
-    rows = { emailSentAt: [], replyAt: [], listCreatedAt: [], projectCreatedAt: [], videosPublished: 0, eventAt: [] };
+    rows = { emailSentAt: [], originalEmailAt: [], replyAt: [], campaignSentAt: [], listCreatedAt: [], projectCreatedAt: [], videosPublished: 0, eventAt: [] };
     map.set(userId, rows);
   }
   return rows;
@@ -400,10 +435,12 @@ async function loadActivityRows(supabase: Client): Promise<Map<string, ActivityR
   const map = new Map<string, ActivityRows>();
 
   const [emails, lists, projects, events] = await Promise.all([
-    pageAll<{ user_id: string | null; sent_at: string | null; created_at: string; replied_at: string | null }>((from, to) =>
-      supabase.from('user_sent_emails').select('user_id, sent_at, created_at, replied_at').eq('status', 'sent').order('created_at').range(from, to),
+    pageAll<{ user_id: string | null; sent_at: string | null; created_at: string; replied_at: string | null; email_type: string | null }>((from, to) =>
+      supabase.from('user_sent_emails').select('user_id, sent_at, created_at, replied_at, email_type').eq('status', 'sent').order('created_at').range(from, to),
     ),
-    pageAll<TimestampRow>((from, to) => supabase.from('outreach_lists').select('user_id, at:created_at').order('created_at').range(from, to)),
+    pageAll<{ user_id: string | null; created_at: string; sent_at: string | null; status: string | null; emails_sent: number | null }>((from, to) =>
+      supabase.from('outreach_lists').select('user_id, created_at, sent_at, status, emails_sent').order('created_at').range(from, to),
+    ),
     pageAll<{ user_id: string | null; created_at: string; youtube_url: string | null }>((from, to) =>
       supabase.from('projects').select('user_id, created_at, youtube_url').order('created_at').range(from, to),
     ),
@@ -413,10 +450,17 @@ async function loadActivityRows(supabase: Client): Promise<Map<string, ActivityR
   for (const e of emails) {
     if (!e.user_id) continue;
     const rows = rowsFor(map, e.user_id);
-    rows.emailSentAt.push(e.sent_at ?? e.created_at);
+    const at = e.sent_at ?? e.created_at;
+    rows.emailSentAt.push(at);
+    if (!e.email_type || e.email_type === 'original') rows.originalEmailAt.push(at);
     if (e.replied_at) rows.replyAt.push(e.replied_at);
   }
-  for (const l of lists) if (l.user_id && l.at) rowsFor(map, l.user_id).listCreatedAt.push(l.at);
+  for (const l of lists) {
+    if (!l.user_id) continue;
+    const rows = rowsFor(map, l.user_id);
+    rows.listCreatedAt.push(l.created_at);
+    if ((l.status && SENT_LIST_STATUSES.has(l.status)) || (l.emails_sent ?? 0) > 0) rows.campaignSentAt.push(l.sent_at ?? l.created_at);
+  }
   for (const p of projects) {
     if (!p.user_id) continue;
     const rows = rowsFor(map, p.user_id);

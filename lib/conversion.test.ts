@@ -67,6 +67,7 @@ function engagement(overrides: Partial<Engagement> = {}): Engagement {
     lastActiveAt: null,
     daysSilentBeforeEnd: null,
     lifetimeActions: 0,
+    lifetime: { emailsSent: overrides.emailsSent ?? 0, repliesReceived: overrides.repliesReceived ?? 0, campaignsCreated: 0, videosCreated: 0, videosPublished: 0 },
     ...overrides,
   };
 }
@@ -107,10 +108,11 @@ test('explainLoss picks the most specific reason in priority order', () => {
   assert.equal(explainLoss(lifecycle({ daysToCancel: 0.3 }))?.reason, 'cancel_day_one');
   assert.equal(explainLoss(lifecycle())?.reason, 'never_activated');
   assert.equal(explainLoss(lifecycle({ outcome: 'trial_expired', canceledAt: null, daysToCancel: null }))?.reason, 'expired_silently');
-  assert.equal(explainLoss(lifecycle({ engagement: engagement({ emailsSent: 400, activeDays: 5, daysSilentBeforeEnd: 0 }) }))?.reason, 'power_user_left');
-  assert.equal(explainLoss(lifecycle({ outcome: 'paid_churned', engagement: engagement({ emailsSent: 3 }) }))?.reason, 'power_user_left');
+  assert.equal(explainLoss(lifecycle({ engagement: engagement({ emailsSent: 400, activeDays: 5, daysSilentBeforeEnd: 0 }) }))?.reason, 'sent_no_replies');
+  assert.equal(explainLoss(lifecycle({ engagement: engagement({ emailsSent: 400, repliesReceived: 6, activeDays: 5, daysSilentBeforeEnd: 0 }) }))?.reason, 'power_user_left');
+  assert.equal(explainLoss(lifecycle({ outcome: 'paid_churned', engagement: engagement({ emailsSent: 3 }) }))?.reason, 'paid_then_left');
   assert.equal(explainLoss(lifecycle({ engagement: engagement({ emailsSent: 12, activeDays: 3, daysSilentBeforeEnd: 0 }) }))?.reason, 'sent_no_replies');
-  assert.equal(explainLoss(lifecycle({ engagement: engagement({ emailsSent: 12, repliesReceived: 2, daysSilentBeforeEnd: 4 }) }))?.reason, 'went_silent');
+  assert.equal(explainLoss(lifecycle({ engagement: engagement({ campaignsCreated: 1, videosCreated: 1, daysSilentBeforeEnd: 4 }) }))?.reason, 'went_silent');
   assert.equal(explainLoss(lifecycle({ outcome: 'stopped_at_paywall', trialStartAt: null, canceledAt: null, daysToCancel: null }))?.reason, 'stopped_at_paywall');
   assert.equal(explainLoss(lifecycle({ outcome: 'abandoned_onboarding', onboarding: 'in_progress', trialStartAt: null }))?.reason, 'abandoned_onboarding');
   assert.equal(explainLoss(lifecycle({ outcome: 'never_opened', onboarding: 'none', trialStartAt: null }))?.reason, 'never_opened');
@@ -154,10 +156,14 @@ test('report aggregates leaks, reasons, plans, and fixes from the cases', () => 
     ],
   );
   assert.deepEqual(report.plans, [{ plan: 'yearly_240_trial', label: '$240 yearly', trials: 3, converted: 1, canceled: 2, ratePct: 33, userIds: ['a', 'b', 'c'] }]);
-  assert.deepEqual(report.timeToCancel.map(b => b.count), [1, 0, 0, 0, 1, 0, 0, 0]);
+  assert.equal(report.cohorts[0].userIds.length, 4);
+  assert.deepEqual(report.timeToCancel.map(b => b.count), [1, 0, 0, 0, 1, 0, 0, 0, 0]);
+  assert.equal(report.headline.lostTrials, 2);
   assert.equal(report.fixes[0].reason, 'cancel_day_one');
-  assert.equal(report.comparison.converters.emailsSent, 40);
+  assert.equal(report.comparison.converters.emailsTotal, 40);
+  assert.equal(report.comparison.converters.emailedInTrialPct, 100);
   assert.equal(report.comparison.lost.people, 2);
+  assert.equal(report.comparison.lost.activatedPct, 0);
 });
 
 test('the range filter anchors on trial start, or signup when there was no trial', () => {

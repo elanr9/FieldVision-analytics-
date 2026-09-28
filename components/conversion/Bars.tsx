@@ -15,12 +15,13 @@ export function Bars({ rows }: { rows: BarRow[] }) {
   const max = Math.max(1, ...rows.map(r => r.value));
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      {rows.map(r => (
-        <button
+      {rows.map(r => {
+        const Row = r.onClick ? 'button' : 'div';
+        return (
+        <Row
           key={r.key}
-          type="button"
+          type={r.onClick ? 'button' : undefined}
           onClick={r.onClick}
-          disabled={!r.onClick}
           style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', width: '100%', padding: '6px 0', background: 'none', border: 0, textAlign: 'left', cursor: r.onClick ? 'pointer' : 'default', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}
         >
           <div style={{ minWidth: 0 }}>
@@ -33,8 +34,9 @@ export function Bars({ rows }: { rows: BarRow[] }) {
             <p style={{ margin: 0, font: '700 16px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>{r.value}</p>
             {r.detail && <p style={{ margin: 0, font: '400 10px/1.4 var(--font-sans)', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.detail}</p>}
           </div>
-        </button>
-      ))}
+        </Row>
+        );
+      })}
     </div>
   );
 }

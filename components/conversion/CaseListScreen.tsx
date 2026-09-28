@@ -19,13 +19,20 @@ export interface CaseListScreenProps {
 
 function subtitle(c: ChurnCase): string {
   const l = c.lifecycle;
-  const bits = [l.planLabel, l.engagement.emailsSent ? `${l.engagement.emailsSent} emails` : null, l.daysToCancel !== null ? `canceled day ${Math.max(1, Math.ceil(l.daysToCancel))}` : null].filter(Boolean);
+  const emails = l.engagement.lifetime.emailsSent;
+  const when =
+    l.daysToCancel === null ? null : l.outcome === 'paid_churned' || l.outcome === 'refunded' ? 'left after paying' : l.daysToCancel >= 8 ? 'canceled after the trial' : `canceled day ${Math.max(1, Math.ceil(l.daysToCancel))}`;
+  const bits = [l.planLabel, emails ? `${emails} emails` : null, when].filter(Boolean);
   return bits.length ? bits.join(' · ') : OUTCOME_LABEL[l.outcome];
+}
+
+function anchor(c: ChurnCase): number {
+  return new Date(c.lifecycle.trialStartAt ?? c.lifecycle.signupAt).getTime();
 }
 
 export function CaseListScreen({ title, hint, cases }: CaseListScreenProps) {
   const { pop, push } = useNav();
-  const sorted = [...cases].sort((a, b) => (b.lifecycle.trialStartAt ?? b.lifecycle.signupAt).localeCompare(a.lifecycle.trialStartAt ?? a.lifecycle.signupAt));
+  const sorted = [...cases].sort((a, b) => anchor(b) - anchor(a));
   const pager = usePager(sorted, 8);
   return (
     <main style={{ maxWidth: 768, margin: '0 auto', padding: '0 16px 64px', fontFamily: 'var(--font-sans)' }}>

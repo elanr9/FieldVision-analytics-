@@ -4,6 +4,7 @@ import type { Engagement, Outcome, UserLifecycle } from './lifecycle';
 export type LossReason =
   | 'payment_failed'
   | 'refunded'
+  | 'paid_then_left'
   | 'cancel_day_one'
   | 'never_activated'
   | 'sent_no_replies'
@@ -38,6 +39,11 @@ export const REASON_META: Record<LossReason, ReasonMeta> = {
     meaning: 'Paid, then wanted the money back. Strongest signal the product missed expectations.',
     accent: '#b91c1c',
   },
+  paid_then_left: {
+    title: 'Paid, then canceled',
+    meaning: 'A real customer who stopped. The only churn in the strict sense, and the most expensive kind.',
+    accent: '#7c3aed',
+  },
   cancel_day_one: {
     title: 'Canceled within a day',
     meaning: 'Started the trial and canceled almost immediately, usually to avoid the charge before exploring.',
@@ -54,8 +60,8 @@ export const REASON_META: Record<LossReason, ReasonMeta> = {
     accent: '#eab308',
   },
   power_user_left: {
-    title: 'Heavy user, still left',
-    meaning: 'Got real value and canceled anyway. Almost always price or an unwanted long commitment.',
+    title: 'Got replies, still left',
+    meaning: 'Sent campaigns and heard back from coaches, then canceled anyway. Almost always price or an unwanted long commitment.',
     accent: '#8b5cf6',
   },
   went_silent: {
@@ -88,6 +94,7 @@ export const REASON_META: Record<LossReason, ReasonMeta> = {
 export const REASON_ORDER: LossReason[] = [
   'payment_failed',
   'refunded',
+  'paid_then_left',
   'cancel_day_one',
   'never_activated',
   'sent_no_replies',
@@ -115,7 +122,6 @@ export function isLost(outcome: Outcome): boolean {
   return LOST_OUTCOMES.has(outcome);
 }
 
-const POWER_USER_EMAILS = 30;
 const SILENT_DAYS = 3;
 
 function activated(e: Engagement): boolean {
@@ -147,7 +153,7 @@ function stripeEvidence(l: UserLifecycle): string[] {
  * Deterministic verdict for a lost athlete, checked in priority order so the most specific
  * explanation wins. Returns null for converted or still trialing users.
  */
-export function explainLoss(l: UserLifecycle, powerUserEmails: number = POWER_USER_EMAILS): Verdict | null {
+export function explainLoss(l: UserLifecycle): Verdict | null {
   if (!isLost(l.outcome)) return null;
   const e = l.engagement;
 
@@ -156,6 +162,18 @@ export function explainLoss(l: UserLifecycle, powerUserEmails: number = POWER_US
   }
   if (l.outcome === 'refunded') {
     return { reason: 'refunded', evidence: [...stripeEvidence(l), ...usageEvidence(e)] };
+  }
+  if (l.outcome === 'paid_churned') {
+    const all = e.lifetime;
+    return {
+      reason: 'paid_then_left',
+      evidence: [
+        ...(l.planLabel ? [`Was on ${l.planLabel}`] : []),
+        ...(l.stripe?.chargedCents ? [`Paid ${(l.stripe.chargedCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} in total`] : []),
+        ...stripeEvidence(l),
+        all.emailsSent > 0 ? `Sent ${plural(all.emailsSent, 'coach email', 'coach emails')} and got ${plural(all.repliesReceived, 'reply', 'replies')} overall` : 'Never sent a coach email',
+      ],
+    };
   }
   if (l.outcome === 'stopped_at_paywall') {
     return { reason: 'stopped_at_paywall', evidence: ['Finished onboarding, no trial started', ...(l.planTried ? [`Looked at ${l.planLabel}`] : [])] };
@@ -181,11 +199,12 @@ export function explainLoss(l: UserLifecycle, powerUserEmails: number = POWER_US
       evidence: [...trialEvidence, e.activeDays > 0 ? `Opened the app on ${plural(e.activeDays, 'day', 'days')} but did nothing` : 'Never opened the app during the trial'],
     };
   }
-  if (e.emailsSent >= powerUserEmails || l.outcome === 'paid_churned') {
-    return { reason: 'power_user_left', evidence: [...trialEvidence, ...usageEvidence(e)] };
-  }
+  // No reply is the story whatever the volume; hearing back and still leaving is a price story.
   if (e.emailsSent > 0 && e.repliesReceived === 0) {
     return { reason: 'sent_no_replies', evidence: [...trialEvidence, ...usageEvidence(e)] };
+  }
+  if (e.repliesReceived > 0) {
+    return { reason: 'power_user_left', evidence: [...trialEvidence, ...usageEvidence(e)] };
   }
   if ((e.daysSilentBeforeEnd ?? 0) >= SILENT_DAYS) {
     return { reason: 'went_silent', evidence: [...trialEvidence, `Quiet for ${plural(e.daysSilentBeforeEnd ?? 0, 'day', 'days')} before the end`, ...usageEvidence(e)] };

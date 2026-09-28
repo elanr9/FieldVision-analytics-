@@ -26,6 +26,9 @@ const EFFORT: Record<ChurnInsights['fixes'][number]['effort'], string> = {
   large: 'Big build',
 };
 
+const askButton: React.CSSProperties = { border: 0, borderRadius: 'var(--radius-full)', padding: '7px 13px', background: 'var(--action-primary)', color: 'var(--text-inverse)', font: '600 12px/1.2 var(--font-sans)', cursor: 'pointer' };
+const ghostButton: React.CSSProperties = { border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full)', padding: '6px 12px', background: 'var(--surface-card)', color: 'var(--ink-700)', font: '600 12px/1.2 var(--font-sans)', cursor: 'pointer' };
+
 const pill: React.CSSProperties = { display: 'inline-flex', borderRadius: 'var(--radius-full)', padding: '2px 8px', font: '600 10px/1.5 var(--font-sans)', background: 'var(--gray-100)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' };
 
 export function useChurnInsights(range: string): { insights: ChurnInsights | null; loading: boolean; error: string | null; refresh: () => void } {
@@ -65,7 +68,7 @@ function Loading() {
       <Skeleton width="95%" />
       <Skeleton width="88%" />
       <Skeleton width="60%" />
-      <p style={{ margin: '4px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>Reading every trial and every Stripe record. This takes about half a minute the first time.</p>
+      <p style={{ margin: '4px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>Reading every trial and every Stripe record. Takes about half a minute the first time, then it is saved until the data changes.</p>
     </Card>
   );
 }
@@ -78,7 +81,7 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
       AI diagnosis
       {insights && (
         <button type="button" onClick={refresh} disabled={loading} style={{ marginLeft: 10, border: 0, background: 'none', padding: 0, cursor: loading ? 'default' : 'pointer', font: '600 11px/1 var(--font-sans)', color: 'var(--ink-600)', textTransform: 'none', letterSpacing: 0 }}>
-          {loading ? 'Thinking…' : 'Rerun'}
+          {loading ? 'Rerunning…' : 'Rerun'}
         </button>
       )}
     </SectionHeading>
@@ -104,15 +107,22 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
         {heading}
         <Card padding="wide" style={{ background: 'var(--surface-inverse)', color: 'var(--text-inverse)', border: 0 }}>
           <p style={{ margin: 0, font: '600 16px/1.4 var(--font-sans)', letterSpacing: '-0.01em' }}>{insights.headline}</p>
-          <p style={{ margin: '8px 0 0', font: '400 10px/1.4 var(--font-sans)', opacity: 0.6 }}>{insights.model} · {new Date(insights.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+          <p style={{ margin: '8px 0 0', font: '400 10px/1.4 var(--font-sans)', opacity: 0.6 }}>Written {new Date(insights.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · reused until the data changes</p>
         </Card>
+        {insights.stale && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, background: 'var(--amber-100)', border: '1px solid var(--amber-200)', borderRadius: 12, padding: '8px 12px' }}>
+            <p style={{ margin: 0, font: '400 12px/1.5 var(--font-sans)', color: 'var(--amber-800)' }}>New trials or cancels landed since this was written.</p>
+            <button type="button" onClick={refresh} disabled={loading} style={{ border: 0, background: 'none', padding: 0, font: '600 12px/1 var(--font-sans)', color: 'var(--amber-800)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{loading ? 'Rerunning…' : 'Rerun now'}</button>
+          </div>
+        )}
+        <p style={{ margin: '8px 2px 0', font: '400 11px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>Problems are ranked by how many people and how much money they cost. Tap Ask the agent on any card to dig into it, push back, or get a prompt.</p>
       </div>
 
       <div>
         <SectionHeading count={insights.problems.length}>Problems, biggest first</SectionHeading>
         <div style={{ display: 'grid', gap: 10 }}>
-          {insights.problems.map(p => (
-            <Card key={p.title} padding="wide" style={{ borderLeft: `4px solid ${SEVERITY[p.severity]}` }}>
+          {insights.problems.map((p, i) => (
+            <Card key={i} padding="wide" style={{ borderLeft: `4px solid ${SEVERITY[p.severity]}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
                 <p style={{ margin: 0, font: '700 15px/1.3 var(--font-sans)' }}>{p.title}</p>
                 <span style={pill}>{p.when}</span>
@@ -120,14 +130,17 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
               <p style={{ margin: '8px 0 0', font: '400 13px/1.5 var(--font-sans)' }}>{p.why}</p>
               {p.evidence.length > 0 && (
                 <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'grid', gap: 3 }}>
-                  {p.evidence.map(ev => <li key={ev} style={{ font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)', paddingLeft: 12, position: 'relative' }}><span style={{ position: 'absolute', left: 0 }}>·</span>{ev}</li>)}
+                  {p.evidence.map((ev, j) => <li key={j} style={{ font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)', paddingLeft: 12, position: 'relative' }}><span style={{ position: 'absolute', left: 0 }}>·</span>{ev}</li>)}
                 </ul>
               )}
-              {p.userIds.length > 0 && (
-                <button type="button" onClick={() => drill.cases(p.title, p.userIds, p.why)} style={{ marginTop: 10, border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full)', padding: '6px 12px', background: 'var(--surface-card)', color: 'var(--ink-700)', font: '600 12px/1.2 var(--font-sans)', cursor: 'pointer' }}>
-                  See the {p.userIds.length} {p.userIds.length === 1 ? 'person' : 'people'}
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                <button type="button" onClick={() => drill.ask(`Let's talk about "${p.title}" (${p.when}). Explain what is really happening here using the data, why these ${p.userIds.length} athletes specifically, and exactly what you would change first.`)} style={askButton}>Ask the agent</button>
+                {p.userIds.length > 0 && (
+                  <button type="button" onClick={() => drill.cases(p.title, p.userIds, p.why)} style={ghostButton}>
+                    {p.userIds.length} {p.userIds.length === 1 ? 'person' : 'people'}
+                  </button>
+                )}
+              </div>
             </Card>
           ))}
         </div>
@@ -137,7 +150,7 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
         <SectionHeading count={insights.fixes.length}>Fixes, best return first</SectionHeading>
         <div style={{ display: 'grid', gap: 10 }}>
           {insights.fixes.map((f, i) => (
-            <Card key={f.title} padding="wide">
+            <Card key={i} padding="wide">
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
                 <p style={{ margin: 0, font: '700 15px/1.3 var(--font-sans)' }}>{i + 1}. {f.title}</p>
                 <span style={pill}>{EFFORT[f.effort]}</span>
@@ -157,6 +170,9 @@ export function AiInsights({ range, drill }: AiInsightsProps) {
                 </ol>
               )}
               {f.problems.length > 0 && <p style={{ margin: '6px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>Fixes: {f.problems.join(', ')}</p>}
+              <div style={{ marginTop: 10 }}>
+                <button type="button" onClick={() => drill.ask(`Let's talk about the fix "${f.title}" at ${f.where}. Is this the right call given the data? What would you change about it, what could go wrong, and how do we measure it worked?`)} style={askButton}>Ask the agent</button>
+              </div>
               <RepoPrompt fix={f} problems={insights.problems} range={range} />
             </Card>
           ))}

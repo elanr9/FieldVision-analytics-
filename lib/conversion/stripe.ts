@@ -20,10 +20,12 @@ export interface StripeSubFacts {
   cancelComment: string | null;
   /** Latest invoice is unpaid after at least one attempt, or the subscription is past due or unpaid */
   paymentFailed: boolean;
-  /** Any succeeded charge on this customer was refunded */
+  /** Every succeeded charge on this customer was refunded in full */
   refunded: boolean;
-  /** Sum of succeeded, non refunded charges on this customer */
+  /** Sum of succeeded charges on this customer, net of refunds */
   chargedCents: number;
+  /** When the first successful charge landed, null when never charged */
+  firstChargeAt: string | null;
 }
 
 export interface StripeFacts {
@@ -85,8 +87,10 @@ async function listAllCharges(stripe: Stripe): Promise<Stripe.Charge[]> {
 
 interface CustomerCharges {
   chargedCents: number;
-  refunded: boolean;
+  grossCents: number;
+  refundedCents: number;
   failed: boolean;
+  firstChargeAt: string | null;
 }
 
 function chargesByCustomer(charges: Stripe.Charge[]): Map<string, CustomerCharges> {
@@ -94,10 +98,13 @@ function chargesByCustomer(charges: Stripe.Charge[]): Map<string, CustomerCharge
   for (const c of charges) {
     const customerId = idOf(c.customer);
     if (!customerId) continue;
-    const current = map.get(customerId) ?? { chargedCents: 0, refunded: false, failed: false };
-    if (c.status === 'succeeded') {
+    const current = map.get(customerId) ?? { chargedCents: 0, grossCents: 0, refundedCents: 0, failed: false, firstChargeAt: null };
+    if (c.status === 'succeeded' && c.amount > 0) {
       current.chargedCents += c.amount - c.amount_refunded;
-      if (c.refunded || c.amount_refunded > 0) current.refunded = true;
+      current.grossCents += c.amount;
+      current.refundedCents += c.amount_refunded;
+      const at = new Date(c.created * 1000).toISOString();
+      if (!current.firstChargeAt || at < current.firstChargeAt) current.firstChargeAt = at;
     } else if (c.status === 'failed') {
       current.failed = true;
     }
@@ -131,11 +138,13 @@ function toFacts(sub: Stripe.Subscription, charges: CustomerCharges | undefined)
     paymentFailed:
       sub.status === 'past_due' ||
       sub.status === 'unpaid' ||
+      sub.status === 'incomplete_expired' ||
       details?.reason === 'payment_failed' ||
       latestInvoiceFailed(sub) ||
       (charges?.failed === true && (charges?.chargedCents ?? 0) === 0),
-    refunded: charges?.refunded ?? false,
+    refunded: (charges?.grossCents ?? 0) > 0 && (charges?.chargedCents ?? 0) === 0,
     chargedCents: charges?.chargedCents ?? 0,
+    firstChargeAt: charges?.firstChargeAt ?? null,
   };
 }
 

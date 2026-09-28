@@ -1,6 +1,4 @@
 import { loadCheckinLog } from '@/lib/checkins';
-import { loadConversionData } from '@/lib/conversion/load';
-import { EMPTY_CONVERSION_DATA, type ConversionData } from '@/lib/conversion/report';
 import { loadNotifications } from '@/lib/notifications';
 import { loadFunnel, loadPaywall, type Funnel, type Paywall } from '@/lib/funnel';
 import { loadUsers } from '@/lib/queries';
@@ -63,22 +61,18 @@ export default async function Home() {
     };
   }
 
-  const [notifications, checkinLog, usage, conversion] = await Promise.all([
+  const [notifications, checkinLog, usage] = await Promise.all([
     loadNotifications().catch(() => []),
     loadCheckinLog().catch(() => []),
     loadUsage(users).catch((e: unknown) => {
       console.error('Usage load failed', e);
       return EMPTY_USAGE;
     }),
-    loadConversionData(users).catch((e: unknown): ConversionData => {
-      console.error('Conversion load failed', e);
-      return { ...EMPTY_CONVERSION_DATA, stripe: { configured: true, error: e instanceof Error ? e.message : String(e) } };
-    }),
   ]);
 
   return (
     <div className="ink-screen-in">
-      <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} conversion={conversion} />
+      <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} />
     </div>
   );
 }

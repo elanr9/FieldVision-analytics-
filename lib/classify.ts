@@ -10,7 +10,7 @@ import type {
 export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** payment_type values that mean lifetime access. monthly_499 is legacy naming for the lifetime price. */
-const LIFETIME_PAYMENT_TYPES = ['lifetime_499', 'monthly_499', 'lifetime_trial'];
+const LIFETIME_PAYMENT_TYPES = ['lifetime_499', 'monthly_499', 'lifetime_trial', 'lifetime', 'one_time'];
 
 export function planInterval(paymentType: string | null): PlanInterval {
   if (!paymentType) return 'unknown';

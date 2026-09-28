@@ -3,7 +3,7 @@
 import { Card } from '@/components/ui/Card';
 import { SectionHeading } from '@/components/ui/SectionHeading';
 import { REASON_META } from '@/lib/conversion/reasons';
-import type { ConversionReport } from '@/lib/conversion/report';
+import { FEEDBACK_LABEL, type ConversionReport } from '@/lib/conversion/report';
 import { AiInsights } from './AiInsights';
 import { Bars } from './Bars';
 import type { Drill } from './ConversionTab';
@@ -33,7 +33,7 @@ export function FixView({ report, range, drill }: FixViewProps) {
               <p style={{ margin: '8px 0 0', font: '500 13px/1.5 var(--font-sans)' }}>{f.action}</p>
               <p style={{ margin: '6px 0 0', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{f.why}</p>
               <button type="button" onClick={() => drill.cases(f.title, f.userIds, REASON_META[f.reason].meaning)} style={{ marginTop: 10, border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full)', padding: '6px 12px', background: 'var(--surface-card)', color: 'var(--ink-700)', font: '600 12px/1.2 var(--font-sans)', cursor: 'pointer' }}>
-                See the {f.affected === 1 ? 'person' : 'people'}
+                See the {people(f.affected)}
               </button>
             </Card>
           ))}
@@ -52,7 +52,7 @@ export function FixView({ report, range, drill }: FixViewProps) {
           {report.comments.map(c => (
             <div key={c.userId} style={{ borderTop: '1px solid var(--border-subtle)', padding: '10px 0' }}>
               <p style={{ margin: 0, font: '500 13px/1.5 var(--font-sans)', fontStyle: 'italic' }}>&ldquo;{c.comment}&rdquo;</p>
-              <p style={{ margin: '2px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{c.name}{c.feedback ? ` · ${c.feedback.replace(/_/g, ' ')}` : ''}</p>
+              <p style={{ margin: '2px 0 0', font: '400 11px/1.4 var(--font-sans)', color: 'var(--text-tertiary)' }}>{c.name}{c.feedback ? ` · ${FEEDBACK_LABEL[c.feedback] ?? c.feedback.replace(/_/g, ' ')}` : ''}</p>
             </div>
           ))}
         </Card>

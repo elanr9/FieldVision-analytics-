@@ -3,7 +3,8 @@ import { FLOW_SECTIONS, flowScreens } from '../onboarding-flow';
 import { formatUsd } from '../stripe-revenue';
 import { OUTCOME_LABEL } from './lifecycle';
 import { REASON_META } from './reasons';
-import { buildConversionReport, type ChurnCase, type ConversionData, type ConversionReport } from './report';
+import { readAiCache, shortHash, writeAiCache } from './ai-cache';
+import { buildConversionReport, dataFingerprint, type ChurnCase, type ConversionData, type ConversionReport } from './report';
 
 /** What the model concludes about the whole funnel. */
 export interface ChurnProblem {
@@ -47,6 +48,8 @@ export interface ChurnInsights {
   questionsToAsk: string[];
   model: string;
   generatedAt: string;
+  /** True when the data has changed since this was written; the UI offers a rerun instead of paying for one automatically */
+  stale: boolean;
 }
 
 /** What the model concludes about one athlete. */
@@ -62,7 +65,7 @@ export interface CaseInsight {
 }
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const insightsCache = new Map<string, { value: ChurnInsights; at: number }>();
+const insightsCache = new Map<string, { value: ChurnInsights; at: number; fingerprint: string }>();
 
 /** The last diagnosis per range, so the agent chat can refer to the same problems and fixes the user sees. */
 export function cachedInsights(rangeKey: string): ChurnInsights | null {
@@ -214,7 +217,8 @@ function caseLine(c: ChurnCase): string {
     l.planLabel ? `plan=${l.planLabel}${l.planAssumed ? '(assumed)' : ''}` : null,
     l.canceledAt ? `canceled=${day(l.canceledAt)} day${l.daysToCancel}` : null,
     l.firstChargeAt ? `charged=${day(l.firstChargeAt)}` : null,
-    `emails=${e.emailsSent} replies=${e.repliesReceived} campaigns=${e.campaignsCreated} videos=${e.videosCreated} active_days=${e.activeDays}`,
+    `trial_window: emails=${e.emailsSent} replies=${e.repliesReceived} campaigns=${e.campaignsCreated} videos=${e.videosCreated} active_days=${e.activeDays}`,
+    `all_time: emails=${e.lifetime.emailsSent} replies=${e.lifetime.repliesReceived} campaigns=${e.lifetime.campaignsCreated} videos=${e.lifetime.videosCreated} published=${e.lifetime.videosPublished}`,
     e.daysSilentBeforeEnd !== null ? `silent_days_before_end=${e.daysSilentBeforeEnd}` : null,
     l.lastSignInAt ? `last_sign_in=${day(l.lastSignInAt)}` : null,
     l.stripe ? `stripe=${l.stripe.status}${l.stripe.paymentFailed ? ' PAYMENT_FAILED' : ''}${l.stripe.refunded ? ' REFUNDED' : ''}${l.stripe.cancelFeedback ? ` feedback=${l.stripe.cancelFeedback}` : ''}${l.stripe.cancelComment ? ` comment="${l.stripe.cancelComment}"` : ''}` : null,
@@ -278,7 +282,7 @@ export function buildBriefing(data: ConversionData, report: ConversionReport, ca
     `Cancel timing: ${report.timeToCancel.map(b => `${b.label} ${b.count}`).join(', ')}`,
     `By plan: ${report.plans.map(p => `${p.label}: ${p.trials} trials, ${p.converted} paid, ${p.canceled} canceled`).join('; ')}`,
     `By signup month: ${report.cohorts.map(c => `${c.label}: ${c.signups} signups, ${c.trials} trials, ${c.converted} paid`).join('; ')}`,
-    `Paid vs lost medians during the trial: paid sent campaign ${report.comparison.converters.activatedPct}% vs lost ${report.comparison.lost.activatedPct}%; emails ${report.comparison.converters.emailsSent} vs ${report.comparison.lost.emailsSent}; active days ${report.comparison.converters.activeDays} vs ${report.comparison.lost.activeDays}.`,
+    `Paid vs lost in the first 7 days: did anything real ${report.comparison.converters.activatedPct}% vs ${report.comparison.lost.activatedPct}%; sent coach emails ${report.comparison.converters.emailedInTrialPct}% vs ${report.comparison.lost.emailedInTrialPct}%; average active days ${report.comparison.converters.activeDaysAvg} vs ${report.comparison.lost.activeDaysAvg}. All time totals: paid ${report.comparison.converters.emailsTotal} emails and ${report.comparison.converters.repliesTotal} replies across ${report.comparison.converters.people} people, lost ${report.comparison.lost.emailsTotal} emails and ${report.comparison.lost.repliesTotal} replies across ${report.comparison.lost.people}.`,
     report.stripeFeedback.length ? `Stripe cancel feedback: ${report.stripeFeedback.map(f => `${f.label} ${f.count}`).join(', ')}` : 'Stripe cancel feedback: none collected yet (survey is off).',
     report.warnings.length ? `Data warnings: ${report.warnings.map(w => `${w.text} (${w.userIds.length})`).join('; ')}` : '',
     data.stripe.configured ? '' : 'Stripe was not available, so cancel dates and card failures are inferred from Supabase only.',
@@ -331,11 +335,25 @@ async function chat<T>(system: string, user: string, schema: JsonSchema): Promis
   return JSON.parse(content) as T;
 }
 
-/** Whole funnel diagnosis and fix plan. Cached for six hours per range. */
+/**
+ * Whole funnel diagnosis and fix plan. One model call per change in the data: the result is stored
+ * in analytics_ai_cache with the data fingerprint, reused while the fingerprint matches, and served
+ * as stale (with a rerun offer) when the data moved on. Only an explicit refresh pays for a new run.
+ */
 export async function generateChurnInsights(data: ConversionData, range: DateRange | null, refresh = false, context: InsightContext = {}): Promise<ChurnInsights> {
   const key = insightsKey(range);
-  const cached = insightsCache.get(key);
-  if (!refresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+  const fingerprint = dataFingerprint(data, range);
+
+  if (!refresh) {
+    const inMemory = insightsCache.get(key);
+    if (inMemory && Date.now() - inMemory.at < CACHE_TTL_MS) return { ...inMemory.value, stale: inMemory.value.stale || inMemory.fingerprint !== fingerprint };
+    const stored = await readAiCache<ChurnInsights>('insights:' + key);
+    if (stored) {
+      const value: ChurnInsights = { ...stored.value, stale: stored.fingerprint !== fingerprint };
+      insightsCache.set(key, { value, at: Date.now(), fingerprint: stored.fingerprint ?? '' });
+      return value;
+    }
+  }
 
   const report = buildConversionReport(data, range);
   const inRange = new Set(report.leaks[0]?.userIds ?? []);
@@ -360,8 +378,10 @@ export async function generateChurnInsights(data: ConversionData, range: DateRan
     problems: raw.problems.map(p => ({ ...p, userIds: p.userIds.filter(id => known.has(id)) })),
     model: model(),
     generatedAt: new Date().toISOString(),
+    stale: false,
   };
-  insightsCache.set(key, { value, at: Date.now() });
+  insightsCache.set(key, { value, at: Date.now(), fingerprint });
+  await writeAiCache('insights:' + key, value, fingerprint);
   return value;
 }
 
@@ -379,9 +399,16 @@ const repoPromptCache = new Map<string, { value: RepoPrompt; at: number }>();
  * Includes the evidence, the exact screens, the acceptance criteria, and the analytics events to add.
  */
 export async function generateRepoPrompt(fix: ChurnFix, problems: ChurnProblem[], briefingSummary: string, refresh = false): Promise<RepoPrompt> {
-  const key = fix.title + '|' + fix.where;
-  const cached = repoPromptCache.get(key);
-  if (!refresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+  const key = 'prompt:' + shortHash(fix.title + '|' + fix.where + '|' + fix.action);
+  if (!refresh) {
+    const inMemory = repoPromptCache.get(key);
+    if (inMemory && Date.now() - inMemory.at < CACHE_TTL_MS) return inMemory.value;
+    const stored = await readAiCache<RepoPrompt>(key);
+    if (stored) {
+      repoPromptCache.set(key, { value: stored.value, at: Date.now() });
+      return stored.value;
+    }
+  }
 
   const related = problems.filter(p => fix.problems.includes(p.title));
   const prompt = [
@@ -400,6 +427,7 @@ export async function generateRepoPrompt(fix: ChurnFix, problems: ChurnProblem[]
   const raw = await chat<Pick<RepoPrompt, 'repo' | 'prompt'>>(SYSTEM_PROMPT, prompt, REPO_PROMPT_SCHEMA);
   const value: RepoPrompt = { ...raw, model: model(), generatedAt: new Date().toISOString() };
   repoPromptCache.set(key, { value, at: Date.now() });
+  await writeAiCache(key, value, null);
   return value;
 }
 
@@ -487,9 +515,17 @@ export async function streamAgentReply(messages: AgentMessage[], briefing: strin
 
 /** One athlete's story, why and when they left, and what to send them. Cached for six hours. */
 export async function generateCaseInsight(item: ChurnCase, refresh = false): Promise<CaseInsight> {
-  const key = item.lifecycle.userId;
-  const cached = caseCache.get(key);
-  if (!refresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+  // A person's read only needs rewriting when their outcome or verdict moves.
+  const key = `case:${item.lifecycle.userId}:${item.lifecycle.outcome}:${item.verdict?.reason ?? 'none'}`;
+  if (!refresh) {
+    const inMemory = caseCache.get(key);
+    if (inMemory && Date.now() - inMemory.at < CACHE_TTL_MS) return inMemory.value;
+    const stored = await readAiCache<CaseInsight>(key);
+    if (stored) {
+      caseCache.set(key, { value: stored.value, at: Date.now() });
+      return stored.value;
+    }
+  }
 
   const prompt = [
     'Explain this one athlete. Tell the story in two or three sentences, then say exactly why and when they left, what we should do about them, and write a short friendly text message from the founder (first name basis, under 240 characters, one clear ask, no dashes).',
@@ -501,5 +537,6 @@ export async function generateCaseInsight(item: ChurnCase, refresh = false): Pro
   const raw = await chat<Omit<CaseInsight, 'model' | 'generatedAt'>>(SYSTEM_PROMPT, prompt, CASE_SCHEMA);
   const value: CaseInsight = { ...raw, model: model(), generatedAt: new Date().toISOString() };
   caseCache.set(key, { value, at: Date.now() });
+  await writeAiCache(key, value, null);
   return value;
 }

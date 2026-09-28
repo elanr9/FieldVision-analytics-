@@ -140,6 +140,8 @@ export const PLAN_LABELS: Record<string, string> = {
   yearly_240_trial: '$240 yearly',
   monthly_29_99: '$30 monthly',
   lifetime_499: '$499 lifetime',
+  lifetime: '$499 lifetime',
+  one_time: '$499 lifetime',
 };
 
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {

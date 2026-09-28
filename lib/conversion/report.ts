@@ -27,9 +27,18 @@ export interface Headline {
   trialToPaidPct: number;
   paidChurned: number;
   stillTrialing: number;
+  /** Everyone with a loss reason, including people who never trialed */
   lost: number;
+  /** Started a trial (or paid) and is not paying today */
+  lostTrials: number;
+  lostTrialUserIds: string[];
   lostMonthlyCents: number;
+  /** Part of lostMonthlyCents that assumes the default plan because the row no longer says which plan was tried */
+  assumedMonthlyCents: number;
+  assumedCount: number;
   lostOneTimeCents: number;
+  /** Paid outright without a trial (lifetime and one time plans) */
+  boughtWithoutTrial: number;
   medianDaysToCancel: number | null;
 }
 
@@ -55,14 +64,25 @@ export interface ReasonBucket {
   userIds: string[];
 }
 
-export interface Medians {
+/** How one group behaved: shares who did each thing in the first 7 days, and whole account totals. */
+export interface GroupBehavior {
   people: number;
-  emailsSent: number;
-  repliesReceived: number;
-  videosCreated: number;
-  activeDays: number;
-  /** Share who sent at least one coach email, whole percent */
+  /** Share who sent an email, built a campaign, or made a video during the trial window, whole percent */
   activatedPct: number;
+  /** Share who sent at least one coach email during the trial window */
+  emailedInTrialPct: number;
+  /** Share who created a video during the trial window */
+  videoInTrialPct: number;
+  /** Average active days during the trial window, one decimal */
+  activeDaysAvg: number;
+  /** Whole account totals across the group */
+  emailsTotal: number;
+  repliesTotal: number;
+  campaignsTotal: number;
+  videosTotal: number;
+  videosPublishedTotal: number;
+  /** Share who ever got a coach reply */
+  everRepliedPct: number;
 }
 
 export interface CancelBucket {
@@ -79,6 +99,7 @@ export interface Cohort {
   converted: number;
   lost: number;
   ratePct: number | null;
+  userIds: string[];
 }
 
 export interface PlanSplit {
@@ -131,7 +152,7 @@ export interface ConversionReport {
   leaks: LeakStep[];
   outcomes: OutcomeCount[];
   reasons: ReasonBucket[];
-  comparison: { converters: Medians; lost: Medians };
+  comparison: { converters: GroupBehavior; lost: GroupBehavior };
   timeToCancel: CancelBucket[];
   cohorts: Cohort[];
   plans: PlanSplit[];
@@ -151,6 +172,10 @@ export const FIX_PLAYBOOK: Record<LossReason, { action: string; why: string }> =
     action: 'Call every refund within 48 hours and ask what they expected. Offer a free month instead when the gap is fixable.',
     why: 'A refund is the loudest feedback you have. Each one is a product interview waiting to happen.',
   },
+  paid_then_left: {
+    action: 'Call each one within a week of the cancel. Ask what changed, offer a pause or a cheaper monthly plan, and turn on the Stripe cancellation survey so the next one tells you why on the way out.',
+    why: 'They already believed enough to pay. Whatever broke that is the most valuable thing to learn.',
+  },
   cancel_day_one: {
     action: 'Ask for the card on day 5 instead of day 0, and build the first campaign inside the first session so there is something to lose.',
     why: 'Canceling in the first hour is about dodging the charge, not the product. Nobody saw the value yet.',
@@ -160,12 +185,12 @@ export const FIX_PLAYBOOK: Record<LossReason, { action: string; why: string }> =
     why: 'A trial with zero campaigns is a wasted trial. The app should do the first hard thing for them.',
   },
   sent_no_replies: {
-    action: 'Extend the trial to 14 days for anyone who sends a campaign, and show coach opens and video views inside the app while replies are pending.',
-    why: 'Coaches reply in two to three weeks. A 7 day trial ends before the proof arrives.',
+    action: 'Show coach opens and video views inside the app the moment they happen, push the first reply instantly, and auto send the follow up on day 4 if nothing has come back yet.',
+    why: 'Most replies land within a week, so a quiet trial means the campaign did not connect. Opens and a fast follow up are the proof they are waiting for.',
   },
   power_user_left: {
     action: 'Call each one this week. Offer a cheaper monthly option or a pause instead of a cancel, and read their Stripe feedback first.',
-    why: 'They used it heavily and still left. That is price or commitment, and both are negotiable.',
+    why: 'They heard back from coaches and still left. That is price or commitment, and both are negotiable.',
   },
   went_silent: {
     action: 'On day 3 of silence send the founder check in text plus a push about any coach opens. Make the return path one tap.',
@@ -189,7 +214,7 @@ export const FIX_PLAYBOOK: Record<LossReason, { action: string; why: string }> =
   },
 };
 
-const FEEDBACK_LABEL: Record<string, string> = {
+export const FEEDBACK_LABEL: Record<string, string> = {
   too_expensive: 'Too expensive',
   unused: 'Did not use it',
   missing_features: 'Missing features',
@@ -230,23 +255,37 @@ function activated(l: UserLifecycle): boolean {
   return e.emailsSent > 0 || e.campaignsCreated > 0 || e.videosCreated > 0;
 }
 
+/** Only a real trial start counts; lifetime and one time buyers who never trialed are reported separately. */
 function trialed(l: UserLifecycle): boolean {
-  return l.trialStartAt !== null || l.outcome === 'converted' || l.outcome === 'paid_churned';
+  return l.trialStartAt !== null;
 }
 
 function canceledOutcome(o: Outcome): boolean {
   return o === 'canceled_in_trial' || o === 'paid_churned' || o === 'payment_failed' || o === 'refunded';
 }
 
-function medians(cases: ChurnCase[]): Medians {
+function share(cases: ChurnCase[], test: (c: ChurnCase) => boolean): number {
+  return cases.length === 0 ? 0 : Math.round((cases.filter(test).length / cases.length) * 100);
+}
+
+function sum(values: number[]): number {
+  return values.reduce((a, b) => a + b, 0);
+}
+
+function behavior(cases: ChurnCase[]): GroupBehavior {
   const e = cases.map(c => c.lifecycle.engagement);
   return {
     people: cases.length,
-    emailsSent: median(e.map(x => x.emailsSent)),
-    repliesReceived: median(e.map(x => x.repliesReceived)),
-    videosCreated: median(e.map(x => x.videosCreated)),
-    activeDays: median(e.map(x => x.activeDays)),
-    activatedPct: cases.length === 0 ? 0 : Math.round((cases.filter(c => activated(c.lifecycle)).length / cases.length) * 100),
+    activatedPct: share(cases, c => activated(c.lifecycle)),
+    emailedInTrialPct: share(cases, c => c.lifecycle.engagement.emailsSent > 0),
+    videoInTrialPct: share(cases, c => c.lifecycle.engagement.videosCreated > 0),
+    activeDaysAvg: cases.length === 0 ? 0 : Math.round((sum(e.map(x => x.activeDays)) / cases.length) * 10) / 10,
+    emailsTotal: sum(e.map(x => x.lifetime.emailsSent)),
+    repliesTotal: sum(e.map(x => x.lifetime.repliesReceived)),
+    campaignsTotal: sum(e.map(x => x.lifetime.campaignsCreated)),
+    videosTotal: sum(e.map(x => x.lifetime.videosCreated)),
+    videosPublishedTotal: sum(e.map(x => x.lifetime.videosPublished)),
+    everRepliedPct: share(cases, c => c.lifecycle.engagement.lifetime.repliesReceived > 0),
   };
 }
 
@@ -255,18 +294,19 @@ function buildLeaks(cases: ChurnCase[]): LeakStep[] {
   const finished = cases.filter(c => c.lifecycle.onboarding === 'completed' || trialed(c.lifecycle));
   const trials = cases.filter(c => trialed(c.lifecycle));
   const used = trials.filter(c => activated(c.lifecycle));
-  const converted = cases.filter(c => c.lifecycle.outcome === 'converted');
+  const converted = trials.filter(c => c.lifecycle.outcome === 'converted');
 
+  // Using the trial is not a prerequisite for paying, so the paying step drops against trials started.
   const steps = [
-    { key: 'signed_up', label: 'Signed up', cases: signedUp },
-    { key: 'finished_onboarding', label: 'Finished onboarding', cases: finished },
-    { key: 'started_trial', label: 'Started a trial', cases: trials },
-    { key: 'used_trial', label: 'Used the trial', cases: used },
-    { key: 'converted', label: 'Paying', cases: converted },
+    { key: 'signed_up', label: 'Signed up', cases: signedUp, dropFrom: null },
+    { key: 'finished_onboarding', label: 'Finished onboarding', cases: finished, dropFrom: signedUp },
+    { key: 'started_trial', label: 'Started a trial', cases: trials, dropFrom: finished },
+    { key: 'used_trial', label: 'Used the trial', cases: used, dropFrom: trials },
+    { key: 'converted', label: 'Paying', cases: converted, dropFrom: trials },
   ];
   const first = steps[0].cases.length;
-  return steps.map((s, i) => {
-    const prev = i === 0 ? null : steps[i - 1].cases.length;
+  return steps.map(s => {
+    const prev = s.dropFrom === null ? null : s.dropFrom.length;
     return {
       key: s.key,
       label: s.label,
@@ -299,12 +339,12 @@ function buildReasons(lost: ChurnCase[]): ReasonBucket[] {
 
 function buildTimeToCancel(cases: ChurnCase[]): CancelBucket[] {
   const canceled = cases.filter(c => canceledOutcome(c.lifecycle.outcome) && c.lifecycle.daysToCancel !== null);
-  // Days 1 to 6 are hands on cancels; "Trial end" is the day 7 auto cancel; anything later happened after access was already gone or charged.
-  const labels = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Trial end', 'Later'];
+  // Days 1 to 7 are hands on cancels inside the trial; "End" is the cancel that lands right at the day 7 boundary; "Later" happened after access had lapsed or been charged.
+  const labels = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7', 'End', 'Later'];
   const buckets: CancelBucket[] = labels.map(label => ({ label, count: 0, userIds: [] }));
   for (const c of canceled) {
     const days = c.lifecycle.daysToCancel ?? 0;
-    const index = days >= 8 ? 7 : Math.min(6, Math.floor(days));
+    const index = days >= 8 ? 8 : Math.min(7, Math.floor(days));
     buckets[index].count += 1;
     buckets[index].userIds.push(c.lifecycle.userId);
   }
@@ -339,6 +379,7 @@ function buildCohorts(cases: ChurnCase[]): Cohort[] {
         converted: converted.length,
         lost: lost.length,
         ratePct: trials.length === 0 ? null : Math.round((converted.length / trials.length) * 100),
+        userIds: ids(group),
       };
     });
 }
@@ -346,8 +387,9 @@ function buildCohorts(cases: ChurnCase[]): Cohort[] {
 function buildPlans(cases: ChurnCase[]): PlanSplit[] {
   const byPlan = new Map<string, ChurnCase[]>();
   for (const c of cases) {
-    if (!c.lifecycle.planTried || !trialed(c.lifecycle)) continue;
-    byPlan.set(c.lifecycle.planTried, [...(byPlan.get(c.lifecycle.planTried) ?? []), c]);
+    if (!trialed(c.lifecycle)) continue;
+    const plan = c.lifecycle.planTried ?? 'unknown';
+    byPlan.set(plan, [...(byPlan.get(plan) ?? []), c]);
   }
   return [...byPlan.entries()]
     .map(([plan, group]) => {
@@ -355,7 +397,7 @@ function buildPlans(cases: ChurnCase[]): PlanSplit[] {
       const canceled = group.filter(c => canceledOutcome(c.lifecycle.outcome)).length;
       return {
         plan,
-        label: group[0].lifecycle.planLabel ?? plan,
+        label: plan === 'unknown' ? 'Plan not recorded' : group[0].lifecycle.planLabel ?? plan,
         trials: group.length,
         converted,
         canceled,
@@ -428,6 +470,25 @@ function buildOutcomes(cases: ChurnCase[]): OutcomeCount[] {
     .filter(o => o.count > 0);
 }
 
+/**
+ * Changes whenever the conversion picture changes: a new trial, a cancel, a charge, or a verdict.
+ * The AI diagnosis is reused for as long as this stays the same.
+ */
+export function dataFingerprint(data: ConversionData, range: DateRange | null = null): string {
+  const cases = data.cases.filter(c => inRange(c.lifecycle, range));
+  const outcomes = new Map<string, number>();
+  for (const c of cases) {
+    const k = c.lifecycle.outcome + (c.verdict ? ':' + c.verdict.reason : '');
+    outcomes.set(k, (outcomes.get(k) ?? 0) + 1);
+  }
+  const parts = [...outcomes.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, n]) => `${k}=${n}`);
+  const latest = cases.reduce((max, c) => {
+    const stamps = [c.lifecycle.signupAt, c.lifecycle.trialStartAt, c.lifecycle.canceledAt, c.lifecycle.firstChargeAt].filter((s): s is string => s !== null);
+    return stamps.reduce((m, s) => (s > m ? s : m), max);
+  }, '');
+  return `${cases.length}|${parts.join(',')}|${latest.slice(0, 10)}|${data.stripe.configured ? 'stripe' : 'nostripe'}`;
+}
+
 /** Attaches a verdict to every lifecycle. */
 export function buildCases(lifecycles: UserLifecycle[]): ChurnCase[] {
   return lifecycles.map(lifecycle => ({ lifecycle, verdict: explainLoss(lifecycle) }));
@@ -440,10 +501,15 @@ export function buildCases(lifecycles: UserLifecycle[]): ChurnCase[] {
 export function buildConversionReport(data: ConversionData, range: DateRange | null = null): ConversionReport {
   const cases = data.cases.filter(c => inRange(c.lifecycle, range));
   const trials = cases.filter(c => trialed(c.lifecycle));
-  const converted = cases.filter(c => c.lifecycle.outcome === 'converted');
+  const converted = trials.filter(c => c.lifecycle.outcome === 'converted');
+  const boughtWithoutTrial = cases.filter(c => c.lifecycle.outcome === 'converted' && !trialed(c.lifecycle));
   const lost = cases.filter(c => c.verdict !== null);
   const lostTrials = trials.filter(c => isLost(c.lifecycle.outcome));
-  const daysToCancel = cases.map(c => c.lifecycle.daysToCancel).filter((d): d is number => d !== null);
+  // Median cancel timing is about the trial, so paid churn months later stays out of it.
+  const daysToCancel = cases
+    .filter(c => c.lifecycle.outcome === 'canceled_in_trial' || c.lifecycle.outcome === 'payment_failed')
+    .map(c => c.lifecycle.daysToCancel)
+    .filter((d): d is number => d !== null);
 
   const reasons = buildReasons(lost);
   const feedback = buildFeedback(cases);
@@ -457,14 +523,19 @@ export function buildConversionReport(data: ConversionData, range: DateRange | n
       paidChurned: cases.filter(c => c.lifecycle.outcome === 'paid_churned' || c.lifecycle.outcome === 'refunded').length,
       stillTrialing: cases.filter(c => c.lifecycle.outcome === 'still_trialing').length,
       lost: lost.length,
+      lostTrials: lostTrials.length,
+      lostTrialUserIds: ids(lostTrials),
       lostMonthlyCents: lostTrials.reduce((sum, c) => sum + c.lifecycle.planMonthlyCents, 0),
+      assumedMonthlyCents: lostTrials.filter(c => c.lifecycle.planAssumed).reduce((sum, c) => sum + c.lifecycle.planMonthlyCents, 0),
+      assumedCount: lostTrials.filter(c => c.lifecycle.planAssumed).length,
       lostOneTimeCents: lostTrials.reduce((sum, c) => sum + c.lifecycle.planOneTimeCents, 0),
+      boughtWithoutTrial: boughtWithoutTrial.length,
       medianDaysToCancel: daysToCancel.length === 0 ? null : median(daysToCancel),
     },
     leaks: buildLeaks(cases),
     outcomes: buildOutcomes(cases),
     reasons,
-    comparison: { converters: medians(converted), lost: medians(lostTrials) },
+    comparison: { converters: behavior(converted), lost: behavior(lostTrials) },
     timeToCancel: buildTimeToCancel(cases),
     cohorts: buildCohorts(cases),
     plans: buildPlans(cases),
