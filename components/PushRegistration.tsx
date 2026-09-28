@@ -79,7 +79,7 @@ export default function PushRegistration() {
     const handles: Array<{ remove: () => Promise<void> }> = [];
 
     const showBanner = (notification: PushNotification) => {
-      const title = notification.title ?? 'FieldVision';
+      const title = notification.title ?? 'Inkbound';
       const body = notification.body ?? '';
       const userId = notification.data?.userId;
       setBanner({ title, body, userId, focus: pushFocus(notification.data) });

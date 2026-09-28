@@ -75,7 +75,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase
       .from('user_profiles')
       .select(
-        'user_id, full_name, email, notification_email, phone_number, current_team, graduation_year, positions, created_at, trial_started_at, account_type, is_demo, is_ambassador, is_admin',
+        'user_id, full_name, email, notification_email, phone_number, current_team, graduation_year, positions, created_at, trial_started_at, account_type, is_demo, is_ambassador, is_admin, is_review_account',
       )
       .order('created_at', { ascending: false }),
     supabase

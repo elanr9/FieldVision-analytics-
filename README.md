@@ -1,6 +1,6 @@
-# FieldVision Analytics
+# Inkbound Analytics
 
-Internal analytics dashboard for FieldVision. Reads the production Supabase project (read only) and shows the real business numbers: signups, trials, and genuine paying customers, with comped, demo, ambassador, and admin accounts excluded from every revenue metric.
+Internal analytics dashboard for Inkbound. Reads the production Supabase project (read only) and shows the real business numbers: signups, trials, and genuine paying customers, with comped, demo, ambassador, and admin accounts excluded from every revenue metric.
 
 ## Status labels
 
@@ -25,7 +25,7 @@ npm run dev                  # http://localhost:3050
 
 | Name | Value |
 |---|---|
-| `SUPABASE_URL` | The FieldVision Supabase project URL |
+| `SUPABASE_URL` | The Inkbound Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Only used server side, never sent to the browser |
 | `STRIPE_SECRET_KEY` | Stripe secret key (same as Supabase). Powers gross revenue, MRR, and the revenue chart |
 | `ANALYTICS_PASSWORD` | Shared password for the login gate |

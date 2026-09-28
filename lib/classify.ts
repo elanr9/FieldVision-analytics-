@@ -43,15 +43,15 @@ export interface Classification {
  * 4. Any other full plan: paying. If the trial window passed and Stripe did
  *    not revoke access, the card was charged (the webhook downgrades the plan
  *    on payment failure or cancellation).
- * 5. No full plan: churned if they paid before being canceled, trial ended if
- *    a trial lapsed without converting, signed up otherwise.
+ * 5. No full plan: churned if they were charged before being canceled, trial
+ *    ended if a trial lapsed or was canceled without a charge, signed up otherwise.
  */
 export function classifyUser(
   profile: ProfileRow,
   sub: SubscriptionRow | undefined,
   now: Date = new Date(),
 ): Classification {
-  const flagged = profile.is_demo || profile.is_ambassador || profile.is_admin;
+  const flagged = profile.is_demo || profile.is_ambassador || profile.is_admin || profile.is_review_account === true;
   const interval = planInterval(sub?.payment_type ?? null);
 
   if (flagged) {
@@ -72,10 +72,12 @@ export function classifyUser(
     return { status: 'paying', interval, excludedFromMetrics: false };
   }
 
-  if (sub?.payment_type === 'canceled' && sub.paid_at) {
+  // paid_at is stamped when the Stripe subscription is created, even inside the trial,
+  // so only a recorded charge separates real churn from a canceled trial.
+  if (sub?.payment_type === 'canceled' && sub.paid_at && hasCharge) {
     return { status: 'churned', interval, excludedFromMetrics: false };
   }
-  if (sub?.payment_type === 'trial_expired') {
+  if (sub?.payment_type === 'canceled' || sub?.payment_type === 'trial_expired') {
     return { status: 'trial_ended', interval, excludedFromMetrics: false };
   }
   if (inTrialWindow) {

@@ -1,7 +1,8 @@
-# FieldVision analytics — iOS app icon (direction 1c)
+# Inkbound analytics, iOS app icon
 
-Cream tile (#FFF8F0), FV wordmark (F #4A94E4 / V #1B2A4A), four bars below the
-baseline with the tallest in accent blue (#3B82F6).
+Cream tile (#FFF8F0) with the navy Inkbound runner mark (#203A52) centered at 62%. Generated from public/inkbound-mark.png.
+
+
 
 ## Drop into Xcode
 1. In `Assets.xcassets`, delete the existing `AppIcon` set.

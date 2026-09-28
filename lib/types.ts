@@ -33,6 +33,7 @@ export interface ProfileRow {
   is_demo: boolean;
   is_ambassador: boolean;
   is_admin: boolean;
+  is_review_account?: boolean | null;
 }
 
 /** Raw row from user_subscriptions */

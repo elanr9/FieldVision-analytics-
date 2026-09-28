@@ -26,9 +26,9 @@ export function outreachSmsBody(
     return `Hey ${first}, I saw that you just cancelled your account, I wanted to ask what the reason was and also check in and see if I could have any advice for you on your college recruitment`;
   }
   if (onTrial) {
-    return `Hey ${first}, I'm Elan, the CEO of FieldVision! Saw you made an account and are on a free trial, wanted to check in and see how's everything going. If you have any questions about FieldVision or college recruitment in general feel free to call or text me whenever!`;
+    return `Hey ${first}, I'm Elan, the CEO of Inkbound! Saw you made an account and are on a free trial, wanted to check in and see how's everything going. If you have any questions about Inkbound or college recruitment in general feel free to call or text me whenever!`;
   }
-  return `Hey ${first}, I'm Elan, the CEO of FieldVision AI. I saw you made an account and just wanted to reach out to see if you have any questions about FieldVision or college recruitment in general, whether you use FieldVision or not I'm always here for any questions so feel free to call or text anytime!`;
+  return `Hey ${first}, I'm Elan, the CEO of Inkbound. I saw you made an account and just wanted to reach out to see if you have any questions about Inkbound or college recruitment in general, whether you use Inkbound or not I'm always here for any questions so feel free to call or text anytime!`;
 }
 
 /** Same outreach as SMS, formatted as a clean email with signature. */
@@ -40,10 +40,10 @@ export function outreachEmailBody(
   const first = firstName(name);
   const sms = outreachSmsBody(name, onTrial, cancelled);
   const body = sms.replace(`Hey ${first}, `, `Hey ${first},\n\n`);
-  return `${body}\n\nBest,\nElan\nCEO & Co-founder, FieldVision`;
+  return `${body}\n\nBest,\nElan\nCEO & Co-founder, Inkbound`;
 }
 
-export const OUTREACH_EMAIL_SUBJECT = 'Quick check-in from FieldVision';
+export const OUTREACH_EMAIL_SUBJECT = 'Quick check-in from Inkbound';
 
 export function smsHref(phone: string, body?: string): string {
   if (!body) return `sms:${phone}`;

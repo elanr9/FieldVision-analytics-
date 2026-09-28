@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'ai.fieldvision.analytics',
-  appName: 'FV Analytics',
+  appName: 'Inkbound Analytics',
   webDir: 'ios-shell',
   backgroundColor: '#F7F8FA',
   server: {

@@ -12,7 +12,10 @@ export default function LoginPage() {
         action={formAction}
         className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm"
       >
-        <h1 className="text-lg font-bold">FieldVision Analytics</h1>
+        <div className="flex items-center gap-2">
+          <img src="/inkbound-mark.png" alt="" width={28} height={28} />
+          <h1 className="text-lg font-bold">Inkbound Analytics</h1>
+        </div>
         <p className="mt-1 text-sm text-neutral-500">Enter the dashboard password.</p>
         <input
           type="password"

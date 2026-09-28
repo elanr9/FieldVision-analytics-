@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { ActivityTab, countToday } from '@/components/activity/ActivityTab';
 import { markCheckinSent } from '@/components/activity/actions';
 import { CalendarTab } from '@/components/calendar/CalendarTab';
+import { ConversionTab } from '@/components/conversion/ConversionTab';
+import type { ConversionData } from '@/lib/conversion/report';
 import type { CheckinLogRow } from '@/lib/checkins';
 import type { NotificationRecord } from '@/lib/notifications';
 import { ScreenStack, type Screen } from '@/components/motion';
@@ -31,6 +33,7 @@ export default function Dashboard({
   paywall,
   accounts = [],
   usage,
+  conversion,
 }: {
   users: UserRecord[];
   accounts?: EveryoneRecord[];
@@ -40,6 +43,7 @@ export default function Dashboard({
   funnel: Funnel;
   paywall: Paywall;
   usage: UsageSnapshot;
+  conversion: ConversionData;
 }) {
   const [tab, setTab] = useState('overview');
   /** Tabs stay mounted once opened so switching back is instant instead of re-rendering the whole tree. */
@@ -105,6 +109,7 @@ export default function Dashboard({
     { key: 'overview', node: <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={everyone} usage={usage} push={push} /> },
     { key: 'activity', node: <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} /> },
     { key: 'onboarding', node: <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} /> },
+    { key: 'conversion', node: <ConversionTab data={conversion} users={users} push={push} /> },
     { key: 'users', node: <UsersTab users={accounts} /> },
     { key: 'calendar', node: <CalendarTab users={accounts} /> },
   ];
