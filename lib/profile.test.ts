@@ -220,8 +220,8 @@ test('trialing athlete with nothing yet', () => {
     trialEndsAt: '2026-09-09T02:00:00',
   });
   const p = buildProfile(u, empty, NOW);
-  assert.equal(p.planLabel, '$240 annual');
-  assert.deepEqual(p.planFact, ['$240 annual · trial', 'Trial ends Sep 9 · in 14h']);
+  assert.equal(p.planLabel, '$240 yearly');
+  assert.deepEqual(p.planFact, ['$240 yearly · trial', 'Trial ends Sep 9 · in 14h']);
   assert.equal(p.facts, "FC Dallas Youth · RB · '26");
   assert.equal(p.checkinEligible, true);
   assert.deepEqual(p.stats, { emails: 6, replies: 0, views: 0, calls: 0 });
@@ -269,7 +269,7 @@ test('other statuses', () => {
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'in_progress', onboardingStepId: 'gpa' }), null, NOW).planFact, ['No plan', 'In onboarding · gpa']);
   assert.deepEqual(buildProfile(user({ status: 'signed_up', paymentType: null, interval: 'unknown', paidAt: null, onboarding: 'completed' }), null, NOW).planFact, ['No plan', 'Stopped at paywall']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'lifetime_499', interval: 'lifetime' }), null, NOW).planFact, ['$499 lifetime', 'No renewal']);
-  assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'yearly_240_trial', interval: 'annual', paidAt: '2026-08-05T10:00:00' }), null, NOW).planFact, ['$240 annual', 'Next charge Aug 5, 2027']);
+  assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'yearly_240_trial', interval: 'annual', paidAt: '2026-08-05T10:00:00' }), null, NOW).planFact, ['$240 yearly', 'Next charge Aug 5, 2027']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'inkbound_semester', interval: 'unknown', paidAt: '2026-09-01T10:00:00' }), null, NOW).planFact, ['$120 semester', 'Paid Sep 1']);
   assert.equal(planLabel('monthly_499', 'lifetime'), '$499 lifetime');
 });

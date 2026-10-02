@@ -3,7 +3,7 @@
 import { Card } from '@/components/ui/Card';
 import { SectionHeading } from '@/components/ui/SectionHeading';
 import { Hero } from '@/components/overview/Hero';
-import { SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type Funnel, type FunnelStep } from '@/lib/funnel';
+import { PAYWALL_SCREENS, SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type Funnel, type FunnelStep } from '@/lib/funnel';
 import { count, STARTED_NOUN, UNTRACKED_NOTE } from './format';
 import { Rate } from './Rate';
 
@@ -19,8 +19,10 @@ export function SummaryView({ funnel, onStep }: SummaryViewProps) {
   const by = (id: string): FunnelStep | undefined => f.find(s => s.id === id);
   const paid = by(SUBSCRIBED_STEP_ID) ?? f[f.length - 1];
   const trial = by(TRIAL_STEP_ID)?.reached ?? null;
+  // The paywall screen itself, the same step the Paywall tab counts as "saw the paywall". The chapter
+  // opens on the try-for-free screen, so its first step is a different, larger number.
   const paywallChapter = funnel.chapters[funnel.chapters.length - 1];
-  const reachedPaywall = paywallChapter.steps[0]?.reached ?? null;
+  const reachedPaywall = by(PAYWALL_SCREENS.paywall)?.reached ?? paywallChapter.steps[0]?.reached ?? null;
   const worst = f.filter(hasDrop).sort((a, b) => b.dropPct - a.dropPct).slice(0, 3);
   const fromAccounts = funnel.startedSource === 'accounts_created';
   return (

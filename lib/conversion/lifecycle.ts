@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { TRIAL_MS } from '../classify';
-import { PLAN_LABELS } from '../funnel';
+import { planLabelFor } from '../plans';
 import type { UserRecord } from '../types';
 import { loadStripeFacts, type StripeFacts, type StripeSubFacts } from './stripe';
 
@@ -38,7 +38,8 @@ export const PLAN_MONTHLY_CENTS: Record<string, number> = {
   inkbound_semester: 2000,
   inkbound_offer: 1000,
   inkbound_monthly: 4000,
-  inkbound_quarterly: 0,
+  inkbound_quarterly: 2000,
+  inkbound_weekly: 4333,
   yearly_240_trial: 2000,
   monthly_29_99: 2999,
   lifetime_499: 0,
@@ -204,9 +205,8 @@ function supabaseCanceledAt(sub: LifecycleSubRow | undefined, trialStartAt: stri
   return gapDays >= 6.5 && gapDays <= 7.5 ? sub.expires_at : null;
 }
 
-function planLabelFor(plan: string | null): string | null {
-  if (!plan) return null;
-  return PLAN_LABELS[plan] ?? plan.replace(/_/g, ' ');
+function planLabelOrNull(plan: string | null): string | null {
+  return plan ? planLabelFor(plan) : null;
 }
 
 function withinWindow(t: number, from: number, to: number): boolean {
@@ -371,7 +371,7 @@ export function buildLifecycle(
     firstChargeAt,
     daysToCancel,
     planTried,
-    planLabel: planLabelFor(planTried),
+    planLabel: planLabelOrNull(planTried),
     planAssumed,
     planMonthlyCents: planAssumed ? DEFAULT_TRIAL_MONTHLY_CENTS : planTried ? PLAN_MONTHLY_CENTS[planTried] ?? 0 : 0,
     planOneTimeCents: planTried ? PLAN_ONE_TIME_CENTS[planTried] ?? 0 : 0,
