@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, fakeReason, pipelineStage, TRIAL_MS } from './classify';
 import { normalizePhone } from './contact';
+import { ANALYTICS_EPOCH_ISO } from './epoch';
+import { PAYWALL_SCREENS } from './funnel';
 import { loadFullyDiscountedSubscriptionIds } from './stripe-revenue';
 import { deriveOnboardingStatus, resolveFromIntake, type FlowProgress } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
@@ -9,7 +11,7 @@ import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types
 const ONBOARDING_ACTIVE_MS = 60 * 60 * 1000;
 
 const PAGE_SIZE = 1000;
-const PAYWALL_SCREEN_ID = 's37_paywall';
+
 interface FlowEventRow {
   user_id: string | null;
   name: string;
@@ -35,6 +37,7 @@ async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise
       .from('product_events')
       .select('user_id, name, properties')
       .in('name', ['onboarding_screen_view', 'onboarding_answer'])
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
       .order('created_at', { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
@@ -42,7 +45,7 @@ async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise
     for (const row of rows) {
       if (!row.user_id) continue;
       const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
-      if (screen === PAYWALL_SCREEN_ID) progress.set(row.user_id, 'reached_paywall');
+      if (screen === PAYWALL_SCREENS.paywall) progress.set(row.user_id, 'reached_paywall');
       else if (!progress.has(row.user_id)) progress.set(row.user_id, 'started');
       if (row.name === 'onboarding_answer' && row.properties) {
         answers.set(row.user_id, { ...answers.get(row.user_id), ...row.properties });
@@ -68,6 +71,8 @@ interface ParentInviteRow {
 
 /**
  * Loads every user with classification, contact info, and pipeline stage.
+ * Accounts created before the analytics epoch are not loaded, so every cohort built from this
+ * list (overview, onboarding, paywall, conversion, users, activity) starts at zero on that day.
  * Read only.
  */
 export async function loadUsers(): Promise<UserRecord[]> {
@@ -79,6 +84,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
       .select(
         'user_id, full_name, email, notification_email, phone_number, current_team, graduation_year, positions, created_at, trial_started_at, account_type, is_demo, is_ambassador, is_admin, is_review_account',
       )
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
       .order('created_at', { ascending: false }),
     supabase
       .from('user_subscriptions')

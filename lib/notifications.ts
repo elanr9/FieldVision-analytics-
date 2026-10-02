@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { fromEpoch } from './epoch';
 
 /**
  * Product events shown in the Activity feed. Each row in analytics_notifications
@@ -227,7 +228,7 @@ function isNotificationType(value: string): value is NotificationType {
 /** Feed rows from the last `days` days, newest first, with the user's full name. */
 export async function loadNotifications(days = 14): Promise<NotificationRecord[]> {
   const supabase = adminClient();
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const since = fromEpoch(new Date(Date.now() - days * 24 * 60 * 60 * 1000)).toISOString();
   const { data, error } = await supabase
     .from('analytics_notifications')
     .select('id, created_at, type, user_id, title, sub')

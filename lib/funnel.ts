@@ -1,3 +1,4 @@
+import { fromEpoch } from './epoch';
 import type { ScreenEvent } from './onboarding-analytics';
 import type { FlowScreenDef } from './onboarding-flow.generated';
 import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowScreen, type FlowSectionKey } from './onboarding-flow';
@@ -144,8 +145,9 @@ export const PLAN_LABELS: Record<string, string> = {
   one_time: '$499 lifetime',
 };
 
+/** A trailing window, never reaching back past the analytics epoch. */
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {
-  return { from: new Date(now.getTime() - days * 24 * 60 * 60 * 1000), to: now };
+  return { from: fromEpoch(new Date(now.getTime() - days * 24 * 60 * 60 * 1000)), to: now };
 }
 
 function pct1(num: number, den: number): number {

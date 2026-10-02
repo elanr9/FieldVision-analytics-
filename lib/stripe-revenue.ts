@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { dayKey } from './dates';
+import { ANALYTICS_EPOCH_UNIX } from './epoch';
 
 export interface RevenueEvent {
   paidAt: string;
@@ -112,6 +113,7 @@ async function listAllSucceededPaymentIntents(
     const batch = await stripe.paymentIntents.list({
       limit: 100,
       starting_after: startingAfter,
+      created: { gte: ANALYTICS_EPOCH_UNIX },
     });
     all.push(...batch.data);
     if (!batch.has_more || batch.data.length === 0) break;
@@ -159,10 +161,12 @@ function isAbandoned(sub: Stripe.Subscription): boolean {
 }
 
 /**
- * Loads Stripe revenue for the whole account. Cash collected comes from
+ * Loads Stripe revenue from the analytics epoch on. Cash collected comes from
  * succeeded PaymentIntents (matches Stripe gross volume). MRR follows the
  * Stripe Billing definition: active and past_due subscriptions, monthly
  * normalized, ignoring lifetime plans and 100% discounted subscriptions.
+ * Subscriptions that started before the epoch are left out, so MRR and the ARR
+ * built from it also start at zero.
  */
 export async function loadRevenueSnapshot(
   excludedUserIds: Set<string>,
@@ -232,6 +236,7 @@ export async function loadRevenueSnapshot(
   for (const sub of searchResult.data) {
     const userId = sub.metadata?.user_id;
     if (userId && excludedUserIds.has(userId)) continue;
+    if (sub.start_date < ANALYTICS_EPOCH_UNIX) continue;
     if (isLifetimePlan(sub.metadata?.plan_type)) continue;
     if (hasActiveDiscount(sub)) continue;
     if (isAbandoned(sub)) continue;
