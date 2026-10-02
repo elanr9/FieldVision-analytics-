@@ -1,11 +1,10 @@
-import { ANALYTICS_EPOCH } from './epoch';
-import type { UserRecord } from './types';
-import type { RevenueEvent, RevenueSnapshot } from './stripe-revenue';
-
 /**
  * Overview numbers. Every builder takes the analytics epoch, so totals and chart buckets only
  * cover what happened on or after it; tests pass an older one to work with historical fixtures.
  */
+import { ANALYTICS_EPOCH } from './epoch';
+import type { UserRecord } from './types';
+import type { RevenueEvent, RevenueSnapshot } from './stripe-revenue';
 
 export interface Bucket {
   label: string;
