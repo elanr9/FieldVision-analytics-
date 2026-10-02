@@ -7,6 +7,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ChartLegend } from '@/components/ui/ChartLegend';
 import { CountUp, Fade, type Screen } from '@/components/motion';
 import { InkBars } from '@/components/charts/InkBars';
+import { ANALYTICS_EPOCH_LABEL } from '@/lib/epoch';
 import { formatUsd } from '@/lib/stripe-revenue';
 import type { Bucket, Totals } from '@/lib/overview';
 import type { UserRecord } from '@/lib/types';
@@ -48,7 +49,7 @@ export function OverviewTab({ months, weeks, totals, usage, push }: OverviewTabP
       <SegmentedControl value={view} onChange={k => setView(k as View)} options={[{ key: 'revenue', label: 'Revenue' }, { key: 'growth', label: 'Growth' }, { key: 'usage', label: 'Usage' }]} />
       <Fade id={view}>
         {view === 'revenue' && <div style={{ display: 'grid', gap: 12 }}>
-          <Hero label="All-time revenue" value={formatUsd(T.revenue)} accent caption={T.payments + ' payments since ' + months[0].label} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}><CountUp value={formatUsd(T.mrr)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>MRR</p></div>} />
+          <Hero label="Revenue" value={formatUsd(T.revenue)} accent caption={T.payments + ' payments since ' + ANALYTICS_EPOCH_LABEL} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}><CountUp value={formatUsd(T.mrr)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>MRR</p></div>} />
           <Card padding="wide" style={{ paddingBottom: 10 }}>
             {head(picked ? (picked.label + (grain === 'weeks' ? ' week' : '') + ' · ' + formatUsd(picked.revenue) + (picked.partial ? ' so far' : '')) : 'Revenue by ' + (grain === 'months' ? 'month' : 'week'))}
             <InkBars data={buckets} series={[{ key: 'revenue', color: 'var(--chart-revenue)' }]} format={v => '$' + Math.round(v / 100 / 100) / 10 + 'k'} selected={sel} onSelect={setSel} />
@@ -61,7 +62,7 @@ export function OverviewTab({ months, weeks, totals, usage, push }: OverviewTabP
           </div>
         </div>}
         {view === 'growth' && <div style={{ display: 'grid', gap: 12 }}>
-          <Hero label="All-time signups" value={T.signups} caption={T.trials + ' started a trial · ' + T.payingEver + ' paid'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: 'var(--metric-money)' }}><CountUp value={pct(T.payingEver, T.signups)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>signup → paid</p></div>} />
+          <Hero label={'Signups since ' + ANALYTICS_EPOCH_LABEL} value={T.signups} caption={T.trials + ' started a trial · ' + T.payingEver + ' paid'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: 'var(--metric-money)' }}><CountUp value={pct(T.payingEver, T.signups)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>signup → paid</p></div>} />
           <Card padding="wide" style={{ paddingBottom: 10 }}>
             {head(picked ? (picked.label + ' · ' + picked.signups + ' signups · ' + picked.trials + ' trials · ' + picked.paying + ' paid') : 'Signups · trials · paid by ' + (grain === 'months' ? 'month' : 'week'))}
             <InkBars data={buckets} series={[{ key: 'signups', color: 'var(--chart-signups)' }, { key: 'trials', color: 'var(--chart-trials)' }, { key: 'paying', color: 'var(--chart-conversions)' }]} selected={sel} onSelect={setSel} />
@@ -82,7 +83,7 @@ export function OverviewTab({ months, weeks, totals, usage, push }: OverviewTabP
             <button type="button" onClick={() => push({ key: 'usage', node: <UsageScreen features={usage.detail} /> })} style={{ display: 'block', width: '100%', padding: '10px 0 6px', background: 'none', border: 0, borderTop: '1px solid var(--border-subtle)', cursor: 'pointer', font: '600 13px/1.3 var(--font-sans)', color: 'var(--ink-600)', textAlign: 'left' }}>Full breakdown ›</button>
           </Card>
           <div>
-            <SectionHeading>On Inkbound · all time</SectionHeading>
+            <SectionHeading>On Inkbound · since {ANALYTICS_EPOCH_LABEL}</SectionHeading>
             <div style={g3}>
               <Mini label="Coach convos" value={P.conversations} sub={P.replies + ' replies'} accent />
               <Mini label="Highlight vids" value={P.videos} sub={P.videosPublished + ' published'} />
