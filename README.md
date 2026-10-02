@@ -2,6 +2,10 @@
 
 Internal analytics dashboard for Inkbound. Reads the production Supabase project (read only) and shows the real business numbers: signups, trials, and genuine paying customers, with comped, demo, ambassador, and admin accounts excluded from every revenue metric.
 
+## The analytics epoch
+
+The dashboard counts from one date, `ANALYTICS_EPOCH_ISO` in `lib/epoch.ts`, currently 2 October 2026. Nothing stamped before it is loaded, so revenue, MRR, ARR, signups, trials, onboarding, paywall and usage all start at zero that day and grow from there. Subscriptions that began earlier are left out of MRR, and charges from accounts that signed up earlier are left out of revenue, so the two agree. Move the date forward to reset the dashboard again, or back to bring older history into view.
+
 ## Status labels
 
 Every user gets exactly one label, computed in `lib/classify.ts`:

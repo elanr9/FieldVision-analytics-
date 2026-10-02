@@ -9,6 +9,9 @@ import { buildMonths, buildWeeks, buildTotals, buildOverview } from './overview.
 // Tuesday. Current week starts Sunday Sep 6, current month is Sep.
 const NOW = new Date('2026-09-08T12:00:00');
 
+/** These fixtures predate the real analytics epoch, so the builders are given one that lets them count. */
+const EPOCH = new Date('2026-01-01T00:00:00');
+
 function user(
   id: string,
   status: UserStatus,
@@ -78,7 +81,7 @@ function labelsOf(buckets: Bucket[]): string[] {
 }
 
 test('months run from the earliest included signup through the current month', () => {
-  const months = buildMonths(users, revenue, NOW);
+  const months = buildMonths(users, revenue, NOW, EPOCH);
   console.log(JSON.stringify(months, null, 2));
 
   assert.equal(months.length, 4);
@@ -93,7 +96,7 @@ test('months run from the earliest included signup through the current month', (
 });
 
 test('weeks are the last 12 Sunday-start weeks, oldest first', () => {
-  const weeks = buildWeeks(users, revenue, NOW);
+  const weeks = buildWeeks(users, revenue, NOW, EPOCH);
 
   assert.equal(weeks.length, 12);
   assert.deepEqual(labelsOf(weeks), [
@@ -110,8 +113,8 @@ test('weeks are the last 12 Sunday-start weeks, oldest first', () => {
 });
 
 test('excluded users and their revenue are ignored', () => {
-  const months = buildMonths(users, revenue, NOW);
-  const totals = buildTotals(users, revenue);
+  const months = buildMonths(users, revenue, NOW, EPOCH);
+  const totals = buildTotals(users, revenue, EPOCH);
 
   assert.equal(months[0].label, 'Jun', 'the excluded April signup does not extend the month range');
   assert.equal(months.find(m => m.label === 'Sep')?.revenue, 12000, 'the excluded 99900 event is dropped');
@@ -119,8 +122,8 @@ test('excluded users and their revenue are ignored', () => {
   assert.equal(totals.signups, 4);
 });
 
-test('totals are all-time', () => {
-  const totals = buildTotals(users, revenue);
+test('totals cover everything since the epoch', () => {
+  const totals = buildTotals(users, revenue, EPOCH);
 
   assert.deepEqual(totals, {
     revenue: 30000,
@@ -135,10 +138,33 @@ test('totals are all-time', () => {
   });
 });
 
-test('buildOverview bundles months, weeks and totals', () => {
-  const overview = buildOverview(users, revenue, NOW);
+test('the epoch resets every number: nothing before it is counted or charted', () => {
+  // Everything in the fixtures happened before Sep 1, so this epoch should leave the dashboard empty.
+  const epoch = new Date('2026-09-01T00:00:00');
+  const totals = buildTotals(users, revenue, epoch);
+  const months = buildMonths(users, revenue, NOW, epoch);
+  const weeks = buildWeeks(users, revenue, NOW, epoch);
 
-  assert.deepEqual(overview.months, buildMonths(users, revenue, NOW));
-  assert.deepEqual(overview.weeks, buildWeeks(users, revenue, NOW));
-  assert.deepEqual(overview.totals, buildTotals(users, revenue));
+  assert.deepEqual(totals, {
+    revenue: 0,
+    payments: 0,
+    mrr: 15000,
+    payingNow: 0,
+    payingEver: 0,
+    signups: 1,
+    trials: 0,
+    trialingNow: 0,
+    churned: 0,
+  }, 'only the Sep 7 signup survives; mrr comes from Stripe, which filters itself');
+  assert.deepEqual(labelsOf(months), ['Sep'], 'months start at the epoch, not at the first signup');
+  assert.deepEqual(labelsOf(weeks), ['Aug 30', 'Sep 6'], 'weeks that ended before the epoch are not drawn');
+  assert.equal(weeks[0].signups, 0, 'the Aug 30 week only counts its days after the epoch');
+});
+
+test('buildOverview bundles months, weeks and totals', () => {
+  const overview = buildOverview(users, revenue, NOW, EPOCH);
+
+  assert.deepEqual(overview.months, buildMonths(users, revenue, NOW, EPOCH));
+  assert.deepEqual(overview.weeks, buildWeeks(users, revenue, NOW, EPOCH));
+  assert.deepEqual(overview.totals, buildTotals(users, revenue, EPOCH));
 });

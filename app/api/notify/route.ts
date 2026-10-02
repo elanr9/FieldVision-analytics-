@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import { sendPushToAll } from '@/lib/apns';
+import { PAYWALL_SCREENS } from '@/lib/funnel';
+import { PLAN_LABELS } from '@/lib/plans';
 import { stripeClient } from '@/lib/stripe-revenue';
 import {
   buildNotificationCopy,
@@ -31,19 +33,11 @@ interface FounderEvent {
   dedupeMinutes?: number;
 }
 
-const PAYWALL_SCREENS = new Set(['s37_paywall', 's37c_spin_wheel', 's38_one_time_offer']);
-
-/** Plan label per Stripe payment_type. Prices from the live Inkbound product. */
-const PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
-  inkbound_quarterly: '$60 quarterly',
-  inkbound_weekly: '$10 weekly',
-  monthly_29_99: '$30 monthly',
-  yearly_240_trial: '$240 yearly',
-  lifetime_499: '$499 lifetime',
-};
+/**
+ * Screen views worth a push. The try-for-free screen is left out on purpose: it opens the paywall
+ * chapter, and firing there would alert twice for one athlete walking through checkout.
+ */
+const NOTIFYING_SCREENS = new Set<string>([PAYWALL_SCREENS.paywall, PAYWALL_SCREENS.wheel, PAYWALL_SCREENS.offer]);
 
 function admin(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
@@ -203,9 +197,9 @@ async function productEvent(supabase: SupabaseClient, record: Row): Promise<Foun
 
   const properties = (record.properties ?? null) as unknown;
   const screen = properties && typeof properties === 'object' ? str((properties as Row).screen) : null;
-  if (!screen || !PAYWALL_SCREENS.has(screen)) return null;
+  if (!screen || !NOTIFYING_SCREENS.has(screen)) return null;
 
-  if (screen === 's37_paywall') {
+  if (screen === PAYWALL_SCREENS.paywall) {
     const n = await onboardingFinishedDaysAgo(supabase, userId);
     return { type: 'paywall', userId, vars: { n }, dedupeMinutes: 30 };
   }

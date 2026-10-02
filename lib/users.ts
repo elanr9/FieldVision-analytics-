@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { ANALYTICS_EPOCH_ISO } from './epoch';
 import { guestUpgrades, isLikelyFake, laterDuplicateEmailIds } from './fake-accounts';
 import { PAYWALL_SCREENS } from './funnel';
 import { loadUsers } from './queries';
@@ -130,6 +131,7 @@ async function loadActivity(supabase: ReturnType<typeof adminClient>): Promise<M
     const { data, error } = await supabase
       .from('product_events')
       .select('user_id, name, screen:properties->>screen')
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
       .order('created_at', { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;

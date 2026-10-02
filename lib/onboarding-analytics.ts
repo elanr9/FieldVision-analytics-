@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { ANALYTICS_EPOCH_ISO, isoFromEpoch } from './epoch';
 import { PAYWALL_EVENTS, PAYWALL_SCREENS } from './funnel';
 import { CHAPTER_LABELS, ONBOARDING_STEP_BY_ID, type OnboardingChapter } from './onboarding-steps';
 import type { UserRecord } from './types';
@@ -129,7 +130,7 @@ export async function loadStepViews(fromIso: string, toIso: string): Promise<Ste
       .from('product_events')
       .select('user_id, properties')
       .eq('name', 'onboarding_step_viewed')
-      .gte('created_at', fromIso)
+      .gte('created_at', isoFromEpoch(fromIso))
       .lte('created_at', toIso)
       .order('created_at', { ascending: true })
       .range(from, to),
@@ -169,7 +170,7 @@ export async function loadScreenEvents(fromIso: string, toIso: string): Promise<
       .from('product_events')
       .select('name, user_id, properties')
       .in('name', Object.keys(SCREEN_EVENT_KIND))
-      .gte('created_at', fromIso)
+      .gte('created_at', isoFromEpoch(fromIso))
       .lte('created_at', toIso)
       .order('created_at', { ascending: true })
       .range(from, to),
@@ -196,7 +197,7 @@ export async function loadEventUsers(
       .from('product_events')
       .select('name, user_id')
       .in('name', [...names])
-      .gte('created_at', fromIso)
+      .gte('created_at', isoFromEpoch(fromIso))
       .lte('created_at', toIso)
       .order('created_at', { ascending: true })
       .range(from, to),
@@ -267,7 +268,7 @@ export async function loadPaywallKeyUsers(fromIso: string, toIso: string): Promi
         .from('product_events')
         .select('name, user_id, properties')
         .in('name', PAYWALL_EVENT_NAMES)
-        .gte('created_at', fromIso)
+        .gte('created_at', isoFromEpoch(fromIso))
         .lte('created_at', toIso)
         .order('created_at', { ascending: true })
         .range(from, to),
@@ -277,7 +278,7 @@ export async function loadPaywallKeyUsers(fromIso: string, toIso: string): Promi
         .from('analytics_notifications')
         .select('user_id')
         .eq('type', 'stalled')
-        .gte('created_at', fromIso)
+        .gte('created_at', isoFromEpoch(fromIso))
         .lte('created_at', toIso)
         .order('created_at', { ascending: true })
         .range(from, to),
@@ -289,7 +290,7 @@ export async function loadPaywallKeyUsers(fromIso: string, toIso: string): Promi
   return byKey;
 }
 
-/** Which paywall signals have ever been produced, so a zero in range differs from a signal that does not exist yet. */
+/** Which paywall signals have been produced since the epoch, so a zero in range differs from a signal that does not exist yet. */
 export async function loadSeenPaywallKeys(): Promise<Set<string>> {
   const supabase = adminClient();
   const [events, stalled] = await Promise.all([
@@ -297,9 +298,15 @@ export async function loadSeenPaywallKeys(): Promise<Set<string>> {
       .from('product_events')
       .select('name, user_id, properties')
       .in('name', PAYWALL_EVENT_NAMES)
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
       .order('created_at', { ascending: false })
       .limit(5000),
-    supabase.from('analytics_notifications').select('user_id').eq('type', 'stalled').limit(1),
+    supabase
+      .from('analytics_notifications')
+      .select('user_id')
+      .eq('type', 'stalled')
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
+      .limit(1),
   ]);
   if (events.error) throw events.error;
   if (stalled.error) throw stalled.error;
@@ -312,7 +319,7 @@ export async function loadSeenPaywallKeys(): Promise<Set<string>> {
 }
 
 /**
- * Every onboarding screen id the apps have ever emitted, all time. Lets the funnel tell a screen
+ * Every onboarding screen id the apps have emitted since the epoch. Lets the funnel tell a screen
  * nobody reached in range from one the apps have never instrumented at all.
  */
 export async function loadSeenScreenIds(): Promise<Set<string>> {
@@ -322,6 +329,7 @@ export async function loadSeenScreenIds(): Promise<Set<string>> {
       .from('product_events')
       .select('properties')
       .in('name', Object.keys(SCREEN_EVENT_KIND))
+      .gte('created_at', ANALYTICS_EPOCH_ISO)
       .order('created_at', { ascending: false })
       .range(from, to),
   );
@@ -333,13 +341,18 @@ export async function loadSeenScreenIds(): Promise<Set<string>> {
   return seen;
 }
 
-/** Which of the given event names the athlete app has ever emitted. Lets a zero in range differ from an event that does not exist yet. */
+/** Which of the given event names the athlete app has emitted since the epoch. Lets a zero in range differ from an event that does not exist yet. */
 export async function loadSeenEventNames(names: readonly string[]): Promise<Set<string>> {
   const supabase = adminClient();
   const seen = new Set<string>();
   await Promise.all(
     names.map(async name => {
-      const { data, error } = await supabase.from('product_events').select('name').eq('name', name).limit(1);
+      const { data, error } = await supabase
+        .from('product_events')
+        .select('name')
+        .eq('name', name)
+        .gte('created_at', ANALYTICS_EPOCH_ISO)
+        .limit(1);
       if (error) throw error;
       if (data && data.length > 0) seen.add(name);
     }),
@@ -357,7 +370,7 @@ export async function loadStepConversions(
     .from('product_events')
     .select('name, properties')
     .in('name', ['onboarding_step_viewed', 'onboarding_step_completed'])
-    .gte('created_at', fromIso)
+    .gte('created_at', isoFromEpoch(fromIso))
     .lte('created_at', toIso)
     .limit(5000);
 

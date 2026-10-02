@@ -1,6 +1,8 @@
+import { fromEpoch } from './epoch';
 import type { ScreenEvent } from './onboarding-analytics';
 import type { FlowScreenDef } from './onboarding-flow.generated';
 import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowScreen, type FlowSectionKey } from './onboarding-flow';
+import { PLAN_LABELS, planLabelFor } from './plans';
 import type { UserRecord } from './types';
 
 /**
@@ -131,21 +133,9 @@ export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = Object.fro
   FLOW_SECTIONS.map(s => [s.key, s.short]),
 ) as Record<FunnelChapterKey, string>;
 
-/** Inkbound plans shown in "Trial → paid by plan", keyed by Stripe payment_type. Prices from the live product. */
-export const PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
-  inkbound_quarterly: 'Quarterly',
-  yearly_240_trial: '$240 yearly',
-  monthly_29_99: '$30 monthly',
-  lifetime_499: '$499 lifetime',
-  lifetime: '$499 lifetime',
-  one_time: '$499 lifetime',
-};
-
+/** A trailing window, never reaching back past the analytics epoch. */
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {
-  return { from: new Date(now.getTime() - days * 24 * 60 * 60 * 1000), to: now };
+  return { from: fromEpoch(new Date(now.getTime() - days * 24 * 60 * 60 * 1000)), to: now };
 }
 
 function pct1(num: number, den: number): number {
@@ -367,13 +357,6 @@ export const PLAN_TILES = 3;
 /** payment_type values the billing functions write as a status, not a plan (cancel-subscription, parent invites). */
 const NON_PLAN_PAYMENT_TYPES = /^(canceled|trial_expired)$|pending|expired/;
 
-function planLabel(paymentType: string): string {
-  const known = PLAN_LABELS[paymentType];
-  if (known) return known;
-  const words = paymentType.replace(/^inkbound_/, '').replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
 /**
  * Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have
  * paid. Plans come from the cohort's own Stripe payment_type values (most trials first) so a new price shows up on
@@ -393,7 +376,7 @@ export function buildPlans(included: UserRecord[], range: DateRange): PaywallPla
   }
   return keys.slice(0, PLAN_TILES).map(key => {
     const trials = byPlan.get(key) ?? [];
-    return { key, label: planLabel(key), trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
+    return { key, label: planLabelFor(key), trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
   });
 }
 

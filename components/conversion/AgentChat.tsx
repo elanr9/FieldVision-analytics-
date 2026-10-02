@@ -22,7 +22,7 @@ const STARTERS = [
   'What should we fix first this week, and why?',
   'Why do people stop at the paywall? What would you change on that screen?',
   'Write the Cursor prompt for the top fix.',
-  'We are at $6k ARR. Give me a no budget plan to double trials in 30 days.',
+  'Give me a no budget plan to double trials in 30 days.',
   'Who should I call today and what do I say?',
 ];
 

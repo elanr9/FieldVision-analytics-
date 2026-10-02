@@ -1,3 +1,4 @@
+import { PLAN_LABELS } from './plans';
 import type { PlanInterval, UserRecord } from './types';
 import type { DossierBackground, DossierCampaign, UserDossier } from './user-dossier';
 
@@ -120,17 +121,8 @@ function gradShort(gradYear: number | null): string | null {
  * Human plan name. The amount only lives inside Stripe's payment_type slug
  * (monthly_29_99, yearly_240_trial, lifetime_499), so it is parsed from there.
  */
-/** Live Inkbound prices per Stripe payment_type. */
-const INKBOUND_PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
-  inkbound_quarterly: '$60 quarterly',
-  inkbound_weekly: '$10 weekly',
-};
-
 export function planLabel(paymentType: string | null, interval: PlanInterval): string {
-  if (paymentType && INKBOUND_PLAN_LABELS[paymentType]) return INKBOUND_PLAN_LABELS[paymentType];
+  if (paymentType && PLAN_LABELS[paymentType]) return PLAN_LABELS[paymentType];
   const priced = paymentType?.match(/^(?:monthly|yearly|lifetime)_(\d+)(?:_(\d{1,2}))?/);
   if (priced) {
     const dollars = Math.round(Number(priced[1]) + (priced[2] ? Number(`0.${priced[2]}`) : 0));

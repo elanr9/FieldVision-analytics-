@@ -255,7 +255,7 @@ test('plan tiles follow the trial cohort: unknown payment types surface, most tr
     user('e', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_parent_pending' }),
   ];
   assert.deepEqual(buildPlans(legacy, range), [
-    { key: 'inkbound_weekly', label: 'Weekly', trials: 2, paid: 1 },
+    { key: 'inkbound_weekly', label: '$10 weekly', trials: 2, paid: 1 },
     { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
     { key: 'inkbound_semester', label: '$120 semester', trials: 0, paid: 0 },
   ]);

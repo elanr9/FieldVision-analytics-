@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { addDays, dayKey, startOfDay } from './dates';
+import { ANALYTICS_EPOCH_ISO, fromEpoch } from './epoch';
 import type { UserRecord } from './types';
 
 function adminClient() {
@@ -263,12 +264,14 @@ function excludedFilter(excluded: Set<string>): string | null {
 interface CountOptions {
   /** Column holding the owning user's id; defaults to user_id */
   userColumn?: string;
+  /** Timestamp column the epoch filter uses; defaults to created_at */
+  sinceColumn?: string;
   refine?: (q: CountQuery) => CountQuery;
 }
 
-async function countRows(supabase: SupabaseClient, table: string, excluded: Set<string>, { userColumn = 'user_id', refine = q => q }: CountOptions = {}): Promise<number> {
+async function countRows(supabase: SupabaseClient, table: string, excluded: Set<string>, { userColumn = 'user_id', sinceColumn = 'created_at', refine = q => q }: CountOptions = {}): Promise<number> {
   const filter = excludedFilter(excluded);
-  const base = countQuery(supabase, table, userColumn);
+  const base = countQuery(supabase, table, userColumn).gte(sinceColumn, ANALYTICS_EPOCH_ISO);
   const { count, error } = await refine(filter ? base.not(userColumn, 'in', filter) : base);
   if (error) throw error;
   return count ?? 0;
@@ -281,17 +284,17 @@ interface RepliedRow {
 
 async function fetchRepliedEmails(supabase: SupabaseClient, excluded: Set<string>): Promise<RepliedRow[]> {
   const filter = excludedFilter(excluded);
-  const base = supabase.from('user_sent_emails').select('user_id, coach_email').eq('status', 'sent').not('replied_at', 'is', null);
+  const base = supabase.from('user_sent_emails').select('user_id, coach_email').eq('status', 'sent').not('replied_at', 'is', null).gte('created_at', ANALYTICS_EPOCH_ISO);
   const { data, error } = await (filter ? base.not('user_id', 'in', filter) : base);
   if (error) throw error;
   return (data ?? []) as RepliedRow[];
 }
 
-/** Real 30-day feature usage and all-time platform totals for the Overview Usage view. */
+/** Real 30-day feature usage and platform totals since the analytics epoch, for the Overview Usage view. */
 export async function loadUsage(users: UserRecord[], now: Date = new Date()): Promise<UsageSnapshot> {
   const supabase = adminClient();
   const excluded = new Set(users.filter(u => u.excludedFromMetrics).map(u => u.id));
-  const since = startOfDay(addDays(now, -29));
+  const since = fromEpoch(startOfDay(addDays(now, -29)));
 
   const [events, replied, videos, videosPublished, emailsSent, emailsOpened, campaigns, schoolsSaved, calls] = await Promise.all([
     fetchRecentEvents(supabase, since),
@@ -302,7 +305,7 @@ export async function loadUsage(users: UserRecord[], now: Date = new Date()): Pr
     countRows(supabase, 'user_sent_emails', excluded, { refine: q => q.eq('status', 'sent').not('opened_at', 'is', null) }),
     countRows(supabase, 'outreach_lists', excluded, { refine: q => q.in('status', ['sent', 'completed', 'follow_up_1_sent']) }),
     countRows(supabase, 'user_school_tracking', excluded),
-    countRows(supabase, 'ambassador_bookings', excluded, { userColumn: 'student_user_id' }),
+    countRows(supabase, 'ambassador_bookings', excluded, { userColumn: 'student_user_id', sinceColumn: 'start_at' }),
   ]);
 
   const conversations = new Set(replied.map(r => `${r.user_id}|${r.coach_email ?? ''}`)).size;
