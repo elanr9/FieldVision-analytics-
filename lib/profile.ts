@@ -124,7 +124,8 @@ function gradShort(gradYear: number | null): string | null {
 const INKBOUND_PLAN_LABELS: Record<string, string> = {
   inkbound_semester: '$120 semester',
   inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
+  inkbound_monthly: '$20 monthly',
+  inkbound_annual: '$200 annual',
   inkbound_quarterly: '$60 quarterly',
   inkbound_weekly: '$10 weekly',
 };

@@ -239,7 +239,7 @@ test('paywall shares: nulls for missing events, plan split follows the trial coh
   assert.equal(paywall.stalled10m, null);
   assert.deepEqual(paywall.save, { shown: null, accepted: null });
   assert.deepEqual(paywall.plans, [
-    { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
+    { key: 'inkbound_monthly', label: '$20 monthly', trials: 1, paid: 0 },
     { key: 'inkbound_semester', label: '$120 semester', trials: 1, paid: 1 },
     { key: 'inkbound_offer', label: '$60 semester', trials: 0, paid: 0 },
   ]);
@@ -256,7 +256,7 @@ test('plan tiles follow the trial cohort: unknown payment types surface, most tr
   ];
   assert.deepEqual(buildPlans(legacy, range), [
     { key: 'inkbound_weekly', label: 'Weekly', trials: 2, paid: 1 },
-    { key: 'inkbound_monthly', label: '$40 monthly', trials: 1, paid: 0 },
+    { key: 'inkbound_monthly', label: '$20 monthly', trials: 1, paid: 0 },
     { key: 'inkbound_semester', label: '$120 semester', trials: 0, paid: 0 },
   ]);
 });

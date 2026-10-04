@@ -135,7 +135,8 @@ export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = Object.fro
 export const PLAN_LABELS: Record<string, string> = {
   inkbound_semester: '$120 semester',
   inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
+  inkbound_monthly: '$20 monthly',
+  inkbound_annual: '$200 annual',
   inkbound_quarterly: 'Quarterly',
   yearly_240_trial: '$240 yearly',
   monthly_29_99: '$30 monthly',

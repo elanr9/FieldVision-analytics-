@@ -37,7 +37,8 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 export const PLAN_MONTHLY_CENTS: Record<string, number> = {
   inkbound_semester: 2000,
   inkbound_offer: 1000,
-  inkbound_monthly: 4000,
+  inkbound_monthly: 2000,
+  inkbound_annual: 1667,
   inkbound_quarterly: 0,
   yearly_240_trial: 2000,
   monthly_29_99: 2999,

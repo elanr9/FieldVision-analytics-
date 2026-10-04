@@ -15,8 +15,8 @@ const LIFETIME_PAYMENT_TYPES = ['lifetime_499', 'monthly_499', 'lifetime_trial',
 export function planInterval(paymentType: string | null): PlanInterval {
   if (!paymentType) return 'unknown';
   if (LIFETIME_PAYMENT_TYPES.includes(paymentType)) return 'lifetime';
-  if (paymentType.startsWith('monthly')) return 'monthly';
-  if (paymentType.startsWith('yearly')) return 'annual';
+  if (paymentType.startsWith('monthly') || paymentType === 'inkbound_monthly') return 'monthly';
+  if (paymentType.startsWith('yearly') || paymentType === 'inkbound_annual') return 'annual';
   return 'unknown';
 }
 

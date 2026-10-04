@@ -37,7 +37,8 @@ const PAYWALL_SCREENS = new Set(['s37_paywall', 's37c_spin_wheel', 's38_one_time
 const PLAN_LABELS: Record<string, string> = {
   inkbound_semester: '$120 semester',
   inkbound_offer: '$60 semester',
-  inkbound_monthly: '$40 monthly',
+  inkbound_monthly: '$20 monthly',
+  inkbound_annual: '$200 annual',
   inkbound_quarterly: '$60 quarterly',
   inkbound_weekly: '$10 weekly',
   monthly_29_99: '$30 monthly',
@@ -139,6 +140,20 @@ function trialDays(sub: Stripe.Subscription): number | null {
   return Math.round((sub.trial_end - sub.trial_start) / 86_400);
 }
 
+const INTERVAL_WORDS: Record<string, string> = { day: 'daily', week: 'weekly', month: 'monthly', year: 'annual' };
+
+/** "$20 monthly" from the live Stripe price, so a price change can never leave a stale label. */
+function stripePlanLabel(sub: Stripe.Subscription): string | null {
+  const price = sub.items.data[0]?.price;
+  if (!price?.unit_amount || !price.recurring) return null;
+  const dollars = Math.round(price.unit_amount / 100);
+  const { interval, interval_count: count } = price.recurring;
+  if (interval === 'month' && count === 3) return `$${dollars} quarterly`;
+  if (interval === 'month' && count === 6) return `$${dollars} semester`;
+  if (count !== 1) return `$${dollars} every ${count} ${interval}s`;
+  return `$${dollars} ${INTERVAL_WORDS[interval] ?? interval}`;
+}
+
 async function fetchSubscription(id: string): Promise<Stripe.Subscription | null> {
   const stripe = stripeClient();
   if (!stripe) return null;
@@ -160,7 +175,7 @@ async function fetchSubscription(id: string): Promise<Stripe.Subscription | null
 async function subscriptionEvent(record: Row): Promise<FounderEvent | null> {
   const userId = str(record.user_id);
   if (!userId) return null;
-  const label = planLabel(record.payment_type);
+  let label = planLabel(record.payment_type);
 
   const subscriptionId = str(record.stripe_subscription_id);
   if (!subscriptionId) {
@@ -174,6 +189,7 @@ async function subscriptionEvent(record: Row): Promise<FounderEvent | null> {
 
   const sub = await fetchSubscription(subscriptionId);
   if (!sub) return null;
+  label = stripePlanLabel(sub) ?? label;
 
   const invoice = typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   if (invoice && invoice.amount_paid > 0 && isFresh(invoice.status_transitions?.paid_at)) {
