@@ -141,8 +141,8 @@ test('reached, dropped and dropPct per tracked screen, counting a view or an ans
 });
 
 test('conditional screens show reach but never a drop, and do not feed the next drop', () => {
-  assert.deepEqual(drop('s33b_invite_parent'), [1, 33.3, null, null]);
-  assert.equal(by('s33b_invite_parent').conditional, true);
+  assert.deepEqual(drop('s36c_who_pays'), [1, 33.3, null, null]);
+  assert.equal(by('s36c_who_pays').conditional, true);
   assert.deepEqual(drop('s34_building_plan'), [2, 66.7, 0, 0]);
 });
 
@@ -150,7 +150,7 @@ test('screens the mirror does not know yet are slotted in by id and flagged', ()
   const unknown = by('s33c_new_thing');
   assert.deepEqual([unknown.known, unknown.conditional, unknown.chapter, unknown.label, unknown.reached], [false, true, 'plan', 'New thing', 1]);
   const at = (id: string) => funnel.steps.findIndex(s => s.id === id);
-  assert.ok(at('s33b_invite_parent') < at('s33c_new_thing') && at('s33c_new_thing') < at('s34_building_plan'));
+  assert.ok(at('s33_goals') < at('s33c_new_thing') && at('s33c_new_thing') < at('s34_building_plan'));
   assert.deepEqual(funnel.unknownScreens, ['s33c_new_thing']);
 });
 
@@ -169,7 +169,7 @@ test('chapter enter and exit follow the flow sections', () => {
   assert.deepEqual(funnel.chapters.map(c => c.key), ['welcome', 'progress', 'academics', 'game', 'personal', 'plan', 'paywall']);
   assert.deepEqual([chapter('welcome')?.enter, chapter('welcome')?.exit], [null, null]);
   assert.deepEqual([chapter('personal')?.enter, chapter('personal')?.exit], [3, 3]);
-  assert.deepEqual([chapter('plan')?.enter, chapter('plan')?.exit, chapter('plan')?.steps.length], [3, 2, 6]);
+  assert.deepEqual([chapter('plan')?.enter, chapter('plan')?.exit, chapter('plan')?.steps.length], [3, 2, 5]);
   assert.deepEqual([chapter('paywall')?.enter, chapter('paywall')?.exit, chapter('paywall')?.short], [2, 1, 'Paywall']);
 });
 

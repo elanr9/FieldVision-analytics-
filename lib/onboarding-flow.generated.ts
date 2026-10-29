@@ -15,7 +15,6 @@ export interface FlowScreenDef {
 export const FLOW_SCREEN_DEFS: FlowScreenDef[] = [
   { id: 's01_welcome', section: 1, conditional: false },
   { id: 's02_role', section: 1, conditional: false },
-  { id: 's03_invite_parent', section: 1, conditional: true },
   { id: 's04_gender', section: 1, conditional: false },
   { id: 's05_feelings', section: 1, conditional: false },
   { id: 's06_feeling_normal', section: 1, conditional: false },
@@ -55,11 +54,9 @@ export const FLOW_SCREEN_DEFS: FlowScreenDef[] = [
   { id: 's28_athletics', section: 4, conditional: false },
   { id: 's29_stress_over', section: 5, conditional: false },
   { id: 's30_about_you', section: 5, conditional: false },
-  { id: 's30b_create_account', section: 5, conditional: true },
   { id: 's31_verify_phone', section: 5, conditional: false },
   { id: 's32_find_home', section: 6, conditional: false },
   { id: 's33_goals', section: 6, conditional: false },
-  { id: 's33b_invite_parent', section: 6, conditional: true },
   { id: 's34_building_plan', section: 6, conditional: false },
   { id: 's35_plan_ready', section: 6, conditional: false },
   { id: 's36_try_free', section: 7, conditional: false },
@@ -68,7 +65,5 @@ export const FLOW_SCREEN_DEFS: FlowScreenDef[] = [
   { id: 's36d_parent_billing', section: 7, conditional: true },
   { id: 's37_paywall', section: 7, conditional: false },
   { id: 's37b_connecting', section: 7, conditional: true },
-  { id: 's37c_spin_wheel', section: 7, conditional: true },
   { id: 's37d_parent_invite_sent', section: 7, conditional: true },
-  { id: 's38_one_time_offer', section: 7, conditional: true },
 ];
