@@ -126,6 +126,12 @@ const INKBOUND_PLAN_LABELS: Record<string, string> = {
   inkbound_offer: '$60 semester',
   inkbound_monthly: '$20 monthly',
   inkbound_annual: '$200 annual',
+  inkbound_basic_monthly: '$25 monthly',
+  inkbound_basic_annual: '$200 annual',
+  inkbound_elite_monthly: '$50 monthly',
+  inkbound_elite_annual: '$300 annual',
+  inkbound_elite_annual_promo: '$100 annual',
+  inkbound_elite_annual_promo_10: '$270 annual',
   inkbound_quarterly: '$60 quarterly',
   inkbound_weekly: '$10 weekly',
 };

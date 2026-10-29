@@ -39,6 +39,12 @@ export const PLAN_MONTHLY_CENTS: Record<string, number> = {
   inkbound_offer: 1000,
   inkbound_monthly: 2000,
   inkbound_annual: 1667,
+  inkbound_basic_monthly: 2500,
+  inkbound_basic_annual: 1667,
+  inkbound_elite_monthly: 5000,
+  inkbound_elite_annual: 2500,
+  inkbound_elite_annual_promo: 833,
+  inkbound_elite_annual_promo_10: 2250,
   inkbound_quarterly: 0,
   yearly_240_trial: 2000,
   monthly_29_99: 2999,
@@ -329,7 +335,7 @@ export function buildLifecycle(
   const { outcome, warnings } = resolveOutcome({ user, sub, stripe });
 
   const trialStartAt = user.trialStartedAt ?? (stripe?.trialEndAt ? new Date(new Date(stripe.trialEndAt).getTime() - TRIAL_MS).toISOString() : null);
-  const trialEndAt = stripe?.trialEndAt ?? (trialStartAt ? new Date(new Date(trialStartAt).getTime() + TRIAL_MS).toISOString() : null);
+  const trialEndAt = stripe?.trialEndAt ?? user.trialEndsAt ?? (trialStartAt ? new Date(new Date(trialStartAt).getTime() + TRIAL_MS).toISOString() : null);
 
   const left = outcome === 'paid_churned' || outcome === 'canceled_in_trial' || outcome === 'payment_failed' || outcome === 'refunded';
   const canceledAt = left ? stripe?.canceledAt ?? supabaseCanceledAt(sub, trialStartAt) : null;

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { classifyUser, fakeReason, pipelineStage, TRIAL_MS } from './classify';
+import { classifyUser, fakeReason, pipelineStage, trialLengthMs } from './classify';
 import { normalizePhone } from './contact';
 import { loadFullyDiscountedSubscriptionIds } from './stripe-revenue';
 import { deriveOnboardingStatus, resolveFromIntake, type FlowProgress } from './onboarding-resolve';
@@ -77,7 +77,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase
       .from('user_profiles')
       .select(
-        'user_id, full_name, email, notification_email, phone_number, current_team, graduation_year, positions, created_at, trial_started_at, account_type, is_demo, is_ambassador, is_admin, is_review_account',
+        'user_id, full_name, email, notification_email, phone_number, current_team, graduation_year, positions, created_at, trial_started_at, trial_days, account_type, is_demo, is_ambassador, is_admin, is_review_account',
       )
       .order('created_at', { ascending: false }),
     supabase
@@ -151,7 +151,7 @@ export async function loadUsers(): Promise<UserRecord[]> {
     const lastSignInAt = lastSignInByUser.get(profile.user_id) ?? null;
 
     const trialEndsAt = profile.trial_started_at
-      ? new Date(new Date(profile.trial_started_at).getTime() + TRIAL_MS).toISOString()
+      ? new Date(new Date(profile.trial_started_at).getTime() + trialLengthMs(profile.trial_days)).toISOString()
       : null;
 
     const resolved =

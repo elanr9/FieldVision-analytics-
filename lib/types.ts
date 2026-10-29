@@ -29,6 +29,7 @@ export interface ProfileRow {
   positions: string[] | null;
   created_at: string;
   trial_started_at: string | null;
+  trial_days?: number | null;
   account_type: string;
   is_demo: boolean;
   is_ambassador: boolean;

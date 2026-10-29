@@ -15,14 +15,19 @@ const LIFETIME_PAYMENT_TYPES = ['lifetime_499', 'monthly_499', 'lifetime_trial',
 export function planInterval(paymentType: string | null): PlanInterval {
   if (!paymentType) return 'unknown';
   if (LIFETIME_PAYMENT_TYPES.includes(paymentType)) return 'lifetime';
-  if (paymentType.startsWith('monthly') || paymentType === 'inkbound_monthly') return 'monthly';
-  if (paymentType.startsWith('yearly') || paymentType === 'inkbound_annual') return 'annual';
+  if (paymentType.includes('monthly')) return 'monthly';
+  if (paymentType.includes('annual') || paymentType.includes('yearly')) return 'annual';
   return 'unknown';
 }
 
-export function trialActive(trialStartedAt: string | null, now: Date): boolean {
+/** Stored trial_days when the profile has it, otherwise the legacy 7 day trial. */
+export function trialLengthMs(trialDays: number | null | undefined): number {
+  return (trialDays != null && trialDays > 0 ? trialDays : 7) * 24 * 60 * 60 * 1000;
+}
+
+export function trialActive(trialStartedAt: string | null, now: Date, trialDays?: number | null): boolean {
   if (!trialStartedAt) return false;
-  return now.getTime() < new Date(trialStartedAt).getTime() + TRIAL_MS;
+  return now.getTime() < new Date(trialStartedAt).getTime() + trialLengthMs(trialDays);
 }
 
 export interface Classification {
@@ -62,7 +67,7 @@ export function classifyUser(
 
   const hasFullPlan = sub?.plan === 'full';
   const hasCharge = (sub?.amount_cents ?? 0) > 0;
-  const inTrialWindow = trialActive(profile.trial_started_at, now);
+  const inTrialWindow = trialActive(profile.trial_started_at, now, profile.trial_days);
 
   if (hasFullPlan) {
     if (!sub?.stripe_subscription_id && !hasCharge) {
