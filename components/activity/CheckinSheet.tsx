@@ -27,7 +27,12 @@ export function CheckinSheet({ user, checkinLog, onClose, onSent, inactive }: Ch
 
   const openMessages = () => {
     if (!user || !user.phone) return;
-    window.location.href = smsHref(user.phone, text);
+    const href = smsHref(user.phone, text);
+    // Main-frame assignment makes the Capacitor web view navigate to sms:. iOS then
+    // reloads that view on return and Next paints the client-exception screen.
+    const native = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+    if (native) window.open(href, '_blank');
+    else window.location.href = href;
     onSent(user, variation);
     onClose();
   };

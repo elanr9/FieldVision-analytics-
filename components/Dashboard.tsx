@@ -58,7 +58,22 @@ export default function Dashboard({
   const router = useRouter();
   const onCheckinSent = (user: UserRecord, variation: number) => {
     setLog(l => [{ user_id: user.id, sent_at: new Date().toISOString(), variation }, ...l]);
-    markCheckinSent(user.id, variation).then(() => router.refresh()).catch(() => {});
+    const run = () => { markCheckinSent(user.id, variation).then(() => router.refresh()).catch(() => {}); };
+    // Messages backgrounds the app immediately. A server action in flight then dies
+    // and the App Router replaces the page with the client-exception screen.
+    let left = false;
+    const back = () => {
+      if (document.hidden) { left = true; return; }
+      if (!left) return;
+      document.removeEventListener('visibilitychange', back);
+      run();
+    };
+    document.addEventListener('visibilitychange', back);
+    window.setTimeout(() => {
+      if (left) return;
+      document.removeEventListener('visibilitychange', back);
+      run();
+    }, 1200);
   };
 
   const overview = useMemo(() => buildOverview(users, revenue), [users, revenue]);
