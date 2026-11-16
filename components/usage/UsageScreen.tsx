@@ -30,7 +30,7 @@ type Metric = 'users' | 'events' | 'perUser';
 
 const METRIC_KEY: Record<Metric, 'users30' | 'events30' | 'perUser'> = { users: 'users30', events: 'events30', perUser: 'perUser' };
 const METRIC_UNIT: Record<Metric, string> = { users: 'users', events: 'events', perUser: 'per user' };
-const RAMP = ['var(--ink-900)', 'var(--ink-700)', 'var(--ink-500)', 'var(--ink-400)', 'var(--ink-300)', 'var(--ink-200)', 'var(--gray-300)', 'var(--gray-200)'];
+const RAMP = ['var(--ink-900)', 'var(--ink-700)', 'var(--ink-600)', 'var(--ink-500)', 'var(--ink-400)', 'var(--ink-300)', 'var(--ink-200)', 'var(--gray-400)', 'var(--gray-300)', 'var(--gray-200)', 'var(--gray-100)'];
 const byEvents = (usage: Feature[]) => [...usage].sort((a, b) => b.events30 - a.events30);
 
 export function UsageScreen({ features: usage, focus }: UsageScreenProps) {

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { TRIAL_MS } from '../classify';
-import { PLAN_LABELS } from '../funnel';
+import { PLANS, planLabel as catalogPlanLabel, planMonthlyCents } from '../plans';
 import type { UserRecord } from '../types';
 import { loadStripeFacts, type StripeFacts, type StripeSubFacts } from './stripe';
 
@@ -33,25 +33,12 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   never_opened: 'Never opened the app',
 };
 
-/** Monthly normalized price per Stripe payment_type, in cents. Lifetime is a one time charge, so 0 here. */
-export const PLAN_MONTHLY_CENTS: Record<string, number> = {
-  inkbound_semester: 2000,
-  inkbound_offer: 1000,
-  inkbound_monthly: 2000,
-  inkbound_annual: 1667,
-  inkbound_basic_monthly: 2500,
-  inkbound_basic_annual: 1667,
-  inkbound_elite_monthly: 5000,
-  inkbound_elite_annual: 2500,
-  inkbound_elite_annual_promo: 833,
-  inkbound_elite_annual_promo_10: 2250,
-  inkbound_quarterly: 0,
-  yearly_240_trial: 2000,
-  monthly_29_99: 2999,
-  lifetime_499: 0,
-};
+/** Monthly normalized price per Stripe payment_type, in cents, from the shared plan catalogue. Lifetime is a one time charge, so 0 here. */
+export const PLAN_MONTHLY_CENTS: Record<string, number> = Object.fromEntries(
+  Object.keys(PLANS).map(key => [key, planMonthlyCents(key) ?? 0]),
+);
 
-/** The live paywall's default plan is $240 yearly, used when a canceled row no longer says which plan was tried. */
+/** Monthly value assumed when a canceled row no longer says which plan was tried: the $20 a month the old default plans work out to. */
 export const DEFAULT_TRIAL_MONTHLY_CENTS = 2000;
 
 /** One time prices, in cents, for plans that are not recurring. */
@@ -213,7 +200,7 @@ function supabaseCanceledAt(sub: LifecycleSubRow | undefined, trialStartAt: stri
 
 function planLabelFor(plan: string | null): string | null {
   if (!plan) return null;
-  return PLAN_LABELS[plan] ?? plan.replace(/_/g, ' ');
+  return catalogPlanLabel(plan) ?? plan.replace(/_/g, ' ');
 }
 
 function withinWindow(t: number, from: number, to: number): boolean {

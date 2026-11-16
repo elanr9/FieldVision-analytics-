@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js';
  *             table by analytics_notify_upcoming_call() rather than through the route
  *   inactive  pg_cron daily post to app/api/inactive-check/route.ts, a paying athlete with no app events for 5 days
  *   paywall   product_events onboarding_screen_view s37_paywall
- *   wheel     product_events onboarding_screen_view s37c_spin_wheel or s38_one_time_offer
+ *   wheel     product_events onboarding_screen_view s37c_deal_wheel
  *   stalled   pg_cron analytics_check_paywall_stalls(), paywall view with 10 min of nothing after it
  *   save      product_events retention_offer_accepted (retention-offer edge function)
  *   reply     email_replies insert with kind=reply
@@ -144,7 +144,7 @@ export function buildNotificationCopy(type: NotificationType, vars: Notification
       return { title: `${first} is in the paywall`, sub: n === null ? null : `Finished onboarding ${n} days ago` };
     }
     case 'wheel':
-      return { title: `${first} is on the 90% off screen`, sub: null };
+      return { title: `${first} is spinning the deal wheel`, sub: 'Said not now at the paywall' };
     case 'stalled':
       return { title: `${first} stopped at paywall`, sub: '10 min without action' };
     case 'trial': {

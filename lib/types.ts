@@ -54,6 +54,8 @@ export interface IntakeRow {
   user_id: string;
   completed: boolean;
   current_step_index: number;
+  /** Screen id the current app saved last, e.g. n07_about_you. Null for the legacy wizard. */
+  onboarding_step_id?: string | null;
   updated_at: string | null;
   phone_number: string | null;
   club_team: string | null;
@@ -89,6 +91,10 @@ export interface UserRecord {
   /** When a churned user's subscription was cancelled, null otherwise */
   cancelledAt: string | null;
   paymentType: string | null;
+  /** "$299 annual": the live Stripe price when there is one, else the catalogue price for the plan. */
+  planLabel: string | null;
+  /** Set when a paying or trialing subscription is scheduled to end: the day access stops. */
+  cancelsAt: string | null;
   status: UserStatus;
   interval: PlanInterval;
   isParent: boolean;

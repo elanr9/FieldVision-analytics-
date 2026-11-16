@@ -68,25 +68,65 @@ interface FeatureDef {
   pathPrefixes: string[];
 }
 
-/** The eight features the Usage view can show, matched against FieldVision's product_events. */
+/**
+ * Names for activity read from the product's own tables. The redesigned athlete dashboard writes no
+ * page_view or feature_use events, so for anyone on it the tables are the only record that a feature was used.
+ */
+export const TABLE_EVENTS = {
+  videoMade: 'db:video_made',
+  videoSend: 'db:video_send',
+  campaignBatch: 'db:campaign_batch',
+  askAi: 'db:ask_ai',
+  gameFilm: 'db:game_film',
+  homeProgress: 'db:home_progress',
+} as const;
+
+/** The features the Usage view can show, matched against product_events and the product's own tables. */
 export const FEATURE_DEFS: FeatureDef[] = [
   {
     id: 'highlights',
-    desc: 'Opened the video editor',
+    desc: 'Opened the editor or made a video',
     label: 'Highlight maker',
     icon: 'M2 8.5A2.5 2.5 0 0 1 4.5 6h9A2.5 2.5 0 0 1 16 8.5v7a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 2 15.5zM16 10l5-3v10l-5-3',
-    events: ['highlight_open'],
+    events: ['highlight_open', TABLE_EVENTS.videoMade],
     featureKeys: ['video_editor', 'library'],
     pathPrefixes: ['/videos', '/projects'],
   },
   {
     id: 'campaign',
-    desc: 'Campaign composer',
+    desc: 'Composed or sent a batch to coaches',
     label: 'Coach emails',
     icon: 'M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6',
-    events: ['outreach_compose_open', 'outreach_email_send'],
+    events: ['outreach_compose_open', 'outreach_email_send', TABLE_EVENTS.campaignBatch],
     featureKeys: ['campaigns'],
     pathPrefixes: ['/emails', '/campaigns'],
+  },
+  {
+    id: 'video_send',
+    desc: 'Sent a highlight video to the school list',
+    label: 'Video sends',
+    icon: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+    events: [TABLE_EVENTS.videoSend],
+    featureKeys: [],
+    pathPrefixes: [],
+  },
+  {
+    id: 'ask_ai',
+    desc: 'Asked the recruiting assistant',
+    label: 'Ask AI',
+    icon: 'M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z',
+    events: [TABLE_EVENTS.askAi],
+    featureKeys: [],
+    pathPrefixes: [],
+  },
+  {
+    id: 'game_film',
+    desc: 'Submitted game film for clips',
+    label: 'Game film',
+    icon: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM7 3v18M17 3v18M3 12h18',
+    events: [TABLE_EVENTS.gameFilm],
+    featureKeys: [],
+    pathPrefixes: [],
   },
   {
     id: 'schools',
@@ -108,10 +148,10 @@ export const FEATURE_DEFS: FeatureDef[] = [
   },
   {
     id: 'dashboard',
-    desc: 'Home dashboard',
+    desc: 'Home dashboard and its setup steps',
     label: 'Dashboard',
     icon: 'M9 4v16M15 4v16M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z',
-    events: [],
+    events: [TABLE_EVENTS.homeProgress],
     featureKeys: [],
     pathPrefixes: ['/dashboard'],
   },
@@ -251,6 +291,50 @@ async function fetchRecentEvents(supabase: SupabaseClient, since: Date): Promise
   }
 }
 
+interface TableSource {
+  table: string;
+  /** Timestamp column that marks the moment the feature was used. */
+  at: string;
+  event: string;
+  refine?: (q: TableQuery) => TableQuery;
+}
+
+function tableQuery(supabase: SupabaseClient, source: TableSource, since: Date) {
+  return supabase.from(source.table).select(`user_id, ${source.at}`).gte(source.at, since.toISOString());
+}
+type TableQuery = ReturnType<typeof tableQuery>;
+
+/** Batches the follow-up and update crons send on their own, not the athlete. */
+const AUTOMATED_PURPOSES = '(follow_up_1,follow_up_2,follow_up_3,update_1)';
+
+const TABLE_SOURCES: TableSource[] = [
+  { table: 'projects', at: 'created_at', event: TABLE_EVENTS.videoMade },
+  { table: 'video_sends', at: 'started_at', event: TABLE_EVENTS.videoSend },
+  { table: 'outreach_lists', at: 'sent_at', event: TABLE_EVENTS.campaignBatch, refine: q => q.or(`purpose.is.null,purpose.not.in.${AUTOMATED_PURPOSES}`) },
+  { table: 'chat_conversations', at: 'created_at', event: TABLE_EVENTS.askAi },
+  { table: 'game_film_requests', at: 'created_at', event: TABLE_EVENTS.gameFilm },
+  { table: 'user_dashboard_progress', at: 'updated_at', event: TABLE_EVENTS.homeProgress },
+];
+
+/** Recent rows of the product's own tables as usage events. A table that fails or is gone contributes nothing. */
+async function fetchTableEvents(supabase: SupabaseClient, since: Date): Promise<UsageEventRow[]> {
+  const perSource = await Promise.all(
+    TABLE_SOURCES.map(async source => {
+      const base = tableQuery(supabase, source, since);
+      const { data, error } = await (source.refine ? source.refine(base) : base).limit(PAGE * 5);
+      if (error) {
+        console.error('Usage table read failed', source.table, error.message);
+        return [];
+      }
+      return ((data ?? []) as unknown as Record<string, string | null>[]).flatMap(row => {
+        const at = row[source.at];
+        return row.user_id && at ? [{ user_id: row.user_id, name: source.event, properties: null, created_at: at }] : [];
+      });
+    }),
+  );
+  return perSource.flat();
+}
+
 function countQuery(supabase: SupabaseClient, table: string, userColumn: string) {
   return supabase.from(table).select(userColumn, { count: 'exact', head: true });
 }
@@ -293,8 +377,9 @@ export async function loadUsage(users: UserRecord[], now: Date = new Date()): Pr
   const excluded = new Set(users.filter(u => u.excludedFromMetrics).map(u => u.id));
   const since = startOfDay(addDays(now, -29));
 
-  const [events, replied, videos, videosPublished, emailsSent, emailsOpened, campaigns, schoolsSaved, calls] = await Promise.all([
+  const [pageEvents, tableEvents, replied, videos, videosPublished, emailsSent, emailsOpened, campaigns, schoolsSaved, calls] = await Promise.all([
     fetchRecentEvents(supabase, since),
+    fetchTableEvents(supabase, since),
     fetchRepliedEmails(supabase, excluded),
     countRows(supabase, 'projects', excluded),
     countRows(supabase, 'projects', excluded, { refine: q => q.eq('status', 'downloadable') }),
@@ -305,6 +390,7 @@ export async function loadUsage(users: UserRecord[], now: Date = new Date()): Pr
     countRows(supabase, 'ambassador_bookings', excluded, { userColumn: 'student_user_id' }),
   ]);
 
+  const events = [...pageEvents, ...tableEvents];
   const conversations = new Set(replied.map(r => `${r.user_id}|${r.coach_email ?? ''}`)).size;
 
   const { features, activeUsers30 } = buildFeatureUsage(events, excluded);

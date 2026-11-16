@@ -1,6 +1,6 @@
 import { loadCheckinLog } from '@/lib/checkins';
 import { loadNotifications } from '@/lib/notifications';
-import { loadFunnel, loadPaywall, type Funnel, type Paywall } from '@/lib/funnel';
+import { loadFunnels, loadPaywall, type Funnel, type Paywall } from '@/lib/funnel';
 import { loadUsers } from '@/lib/queries';
 import { loadRevenueSnapshot, type RevenueSnapshot } from '@/lib/stripe-revenue';
 import type { UserRecord } from '@/lib/types';
@@ -20,18 +20,18 @@ export const dynamic = 'force-dynamic';
 export default async function Home() {
   let users: UserRecord[] = [];
   let everyone: EveryoneRecord[] = [];
-  let funnel: Funnel | null = null;
+  let funnels: Funnel[] | null = null;
   let paywall: Paywall | null = null;
   let loadError: string | null = null;
 
   try {
     users = await loadUsers();
-    [funnel, paywall, everyone] = await Promise.all([loadFunnel(30, users), loadPaywall(30, users), loadEveryone(users)]);
+    [funnels, paywall, everyone] = await Promise.all([loadFunnels(30, users), loadPaywall(30, users), loadEveryone(users)]);
   } catch (e) {
     loadError = e instanceof Error ? e.message : String(e);
   }
 
-  if (loadError || funnel === null || paywall === null) {
+  if (loadError || funnels === null || paywall === null) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-red-200 bg-red-50 p-5">
@@ -72,7 +72,7 @@ export default async function Home() {
 
   return (
     <div className="ink-screen-in">
-      <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnel={funnel} paywall={paywall} usage={usage} />
+      <Dashboard users={users} accounts={everyone} revenue={revenue} notifications={notifications} checkinLog={checkinLog} funnels={funnels} paywall={paywall} usage={usage} />
     </div>
   );
 }

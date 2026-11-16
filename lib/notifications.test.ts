@@ -8,7 +8,7 @@ test('paywall', () => {
 });
 
 test('wheel', () => {
-  assert.deepEqual(buildNotificationCopy('wheel', { first: 'Zoe' }), { title: 'Zoe is on the 90% off screen', sub: null });
+  assert.deepEqual(buildNotificationCopy('wheel', { first: 'Zoe' }), { title: 'Zoe is spinning the deal wheel', sub: 'Said not now at the paywall' });
 });
 
 test('stalled', () => {

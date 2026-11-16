@@ -21,7 +21,7 @@ export function sharePct(num: number | null, den: number | null): string {
 
 /** How to describe the `started` cohort in captions, by how it was measured. */
 export const STARTED_NOUN: Record<StartedSource, string> = {
-  welcome_screen: 'who started',
+  welcome_screen: 'who started and made an account',
   accounts_created: 'who entered onboarding',
 };
 

@@ -25,7 +25,7 @@ export function SummaryView({ funnel, onStep }: SummaryViewProps) {
   const fromAccounts = funnel.startedSource === 'accounts_created';
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <Hero label={(fromAccounts ? 'Entered onboarding' : 'Started onboarding') + ' → paid'} value={count(paid.pct) + '%'} accent caption={count(paid.reached) + ' of ' + funnel.started + ' ' + STARTED_NOUN[funnel.startedSource] + ' · last 30 days' + (funnel.untrackedSteps ? ' · ' + UNTRACKED_NOTE : '')} />
+      <Hero label={(fromAccounts ? 'Entered onboarding' : 'Started onboarding') + ' → paid'} value={count(paid.pct) + '%'} accent caption={count(paid.reached) + ' of ' + funnel.started + ' ' + STARTED_NOUN[funnel.startedSource] + ' · last 30 days' + (fromAccounts ? ' · ' + UNTRACKED_NOTE : '')} />
       <Card padding="wide" style={{ paddingTop: 2, paddingBottom: 2 }}>
         <Rate label="1 · Reach the paywall" a={funnel.started} b={reachedPaywall} />
         <div style={{ borderTop: '1px solid var(--border-subtle)' }}><Rate label="2 · Start the free trial" a={reachedPaywall} b={trial} warn /></div>

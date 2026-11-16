@@ -5,8 +5,9 @@ import type {
   SubscriptionRow,
   UserStatus,
 } from './types';
+import { PLANS } from './plans';
 
-/** Trial length used by the live app (useSubscription.ts), 7 days */
+/** Legacy trial length (7 days), the fallback when neither Stripe nor the profile says how long a trial ran. Elite annual runs 3 days. */
 export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** payment_type values that mean lifetime access. monthly_499 is legacy naming for the lifetime price. */
@@ -15,6 +16,8 @@ const LIFETIME_PAYMENT_TYPES = ['lifetime_499', 'monthly_499', 'lifetime_trial',
 export function planInterval(paymentType: string | null): PlanInterval {
   if (!paymentType) return 'unknown';
   if (LIFETIME_PAYMENT_TYPES.includes(paymentType)) return 'lifetime';
+  const period = PLANS[paymentType]?.period;
+  if (period === 'monthly' || period === 'annual' || period === 'lifetime') return period;
   if (paymentType.includes('monthly')) return 'monthly';
   if (paymentType.includes('annual') || paymentType.includes('yearly')) return 'annual';
   return 'unknown';
@@ -29,6 +32,14 @@ export function trialActive(trialStartedAt: string | null, now: Date, trialDays?
   if (!trialStartedAt) return false;
   return now.getTime() < new Date(trialStartedAt).getTime() + trialLengthMs(trialDays);
 }
+
+/** The part of a Stripe subscription that decides the label. */
+export interface StripeStatus {
+  status: string;
+}
+
+/** Stripe statuses that mean access is over. */
+const ENDED_STRIPE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
 
 export interface Classification {
   status: UserStatus;
@@ -45,7 +56,8 @@ export interface Classification {
  * 2. A full plan with no Stripe subscription and no recorded charge was
  *    granted manually: comped. A Stripe subscription on a 100 percent off
  *    coupon is an internal tester: comped and excluded from metrics.
- * 3. A full plan inside the 7 day trial window with no charge yet: trialing.
+ * 3. When Stripe knows the subscription it decides: trialing, paying (active or past due), or ended.
+ *    Without Stripe, a full plan inside the trial window with no charge yet is trialing.
  * 4. Any other full plan: paying. If the trial window passed and Stripe did
  *    not revoke access, the card was charged (the webhook downgrades the plan
  *    on payment failure or cancellation).
@@ -57,6 +69,7 @@ export function classifyUser(
   sub: SubscriptionRow | undefined,
   now: Date = new Date(),
   fullyDiscounted = false,
+  stripe?: StripeStatus,
 ): Classification {
   const flagged = profile.is_demo || profile.is_ambassador || profile.is_admin || profile.is_review_account === true || fullyDiscounted;
   const interval = planInterval(sub?.payment_type ?? null);
@@ -68,6 +81,16 @@ export function classifyUser(
   const hasFullPlan = sub?.plan === 'full';
   const hasCharge = (sub?.amount_cents ?? 0) > 0;
   const inTrialWindow = trialActive(profile.trial_started_at, now, profile.trial_days);
+
+  // Stripe outranks the row whenever it knows the subscription: the row keeps plan 'full' after a
+  // missed webhook, and its trial window is the profile default, not the trial Stripe is running.
+  if (stripe && hasFullPlan) {
+    if (stripe.status === 'trialing') return { status: 'trialing', interval, excludedFromMetrics: false };
+    if (stripe.status === 'active' || stripe.status === 'past_due') return { status: 'paying', interval, excludedFromMetrics: false };
+    if (ENDED_STRIPE_STATUSES.has(stripe.status)) {
+      return { status: hasCharge ? 'churned' : 'trial_ended', interval, excludedFromMetrics: false };
+    }
+  }
 
   if (hasFullPlan) {
     if (!sub?.stripe_subscription_id && !hasCharge) {

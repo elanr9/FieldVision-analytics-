@@ -29,7 +29,7 @@ export default function Dashboard({
   revenue,
   notifications = [],
   checkinLog = [],
-  funnel,
+  funnels,
   paywall,
   accounts = [],
   usage,
@@ -39,7 +39,7 @@ export default function Dashboard({
   revenue: RevenueSnapshot;
   notifications?: NotificationRecord[];
   checkinLog?: CheckinLogRow[];
-  funnel: Funnel;
+  funnels: Funnel[];
   paywall: Paywall;
   usage: UsageSnapshot;
 }) {
@@ -133,7 +133,7 @@ export default function Dashboard({
   const tabPanels = [
     { key: 'overview', node: <OverviewTab months={overview.months} weeks={overview.weeks} totals={overview.totals} real={everyone} usage={usage} push={push} /> },
     { key: 'activity', node: <ActivityTab users={users} notifications={notifications} checkinLog={log} onSent={onCheckinSent} /> },
-    { key: 'onboarding', node: <OnboardingTab funnel={funnel} paywall={paywall} users={includedUsers(users)} push={push} /> },
+    { key: 'onboarding', node: <OnboardingTab funnels={funnels} paywall={paywall} users={includedUsers(users)} push={push} /> },
     { key: 'conversion', node: <ConversionTab users={users} push={push} /> },
     { key: 'users', node: <UsersTab users={accounts} /> },
     { key: 'calendar', node: <CalendarTab users={accounts} /> },

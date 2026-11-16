@@ -25,6 +25,8 @@ function user(id: string, name: string, status: UserStatus, phone: string | null
     paidAt: null,
     cancelledAt: null,
     paymentType: null,
+    planLabel: null,
+    cancelsAt: null,
     status,
     interval: 'monthly',
     isParent: false,

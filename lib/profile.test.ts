@@ -4,12 +4,18 @@ import type { UserRecord } from './types';
 import type { UserDossier } from './user-dossier';
 // @ts-expect-error TS5097: node needs the .ts extension to resolve this module, tsconfig does not allow it
 import { buildProfile, buildThread, formatAgo, planLabel } from './profile.ts';
+// @ts-expect-error TS5097: same as above
+import { planLabel as catalogPlanLabel } from './plans.ts';
 
 // Tuesday Sep 8, 2026.
 const NOW = new Date('2026-09-08T12:00:00');
 
 function user(overrides: Partial<UserRecord>): UserRecord {
+  // The loader names the plan from Stripe or the catalogue; fixtures follow the catalogue.
+  const planLabel = catalogPlanLabel(overrides.paymentType === undefined ? 'monthly_29_99' : overrides.paymentType);
   return {
+    planLabel,
+    cancelsAt: null,
     id: 'u1',
     name: 'Maya Okafor',
     email: 'maya.okafor@gmail.com',
@@ -271,7 +277,10 @@ test('other statuses', () => {
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'lifetime_499', interval: 'lifetime' }), null, NOW).planFact, ['$499 lifetime', 'No renewal']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'yearly_240_trial', interval: 'annual', paidAt: '2026-08-05T10:00:00' }), null, NOW).planFact, ['$240 annual', 'Next charge Aug 5, 2027']);
   assert.deepEqual(buildProfile(user({ status: 'paying', paymentType: 'inkbound_semester', interval: 'unknown', paidAt: '2026-09-01T10:00:00' }), null, NOW).planFact, ['$120 semester', 'Paid Sep 1']);
-  assert.equal(planLabel('monthly_499', 'lifetime'), '$499 lifetime');
+  assert.equal(planLabel({ planLabel: catalogPlanLabel('monthly_499'), interval: 'lifetime' }), '$499 lifetime');
+  assert.equal(planLabel({ planLabel: null, interval: 'annual' }), 'Annual');
+  // A scheduled cancellation replaces the next charge date.
+  assert.deepEqual(buildProfile(user({ status: 'paying', cancelsAt: '2026-09-24T10:00:00' }), null, NOW).planFact, ['$30 monthly', 'Cancelled · access ends Sep 24']);
 });
 
 test('relative dates and thread', () => {

@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyUser, fakeReason, pipelineStage, trialLengthMs } from './classify';
 import { normalizePhone } from './contact';
-import { loadFullyDiscountedSubscriptionIds } from './stripe-revenue';
+import { PAYWALL_SCREENS } from './funnel';
+import { describeScreen, flowOfScreen, type FlowKey } from './onboarding-flow';
+import { PLANS, planLabel } from './plans';
+import { loadSubscriptionStates, type SubscriptionState } from './stripe-revenue';
 import { deriveOnboardingStatus, resolveFromIntake, type FlowProgress } from './onboarding-resolve';
 import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types';
 
@@ -9,7 +12,7 @@ import type { IntakeRow, ProfileRow, SubscriptionRow, UserRecord } from './types
 const ONBOARDING_ACTIVE_MS = 60 * 60 * 1000;
 
 const PAGE_SIZE = 1000;
-const PAYWALL_SCREEN_ID = 's37_paywall';
+const PAYWALL_SCREEN_ID = PAYWALL_SCREENS.paywall;
 interface FlowEventRow {
   user_id: string | null;
   name: string;
@@ -20,6 +23,8 @@ interface FlowEvents {
   progress: Map<string, FlowProgress>;
   /** Every onboarding answer merged per user, for profiles the new flow never wrote to. */
   answers: Map<string, Record<string, unknown>>;
+  /** The screen each user viewed last, and which flow they came through. */
+  lastScreen: Map<string, { screen: string; flow: FlowKey | null }>;
 }
 
 function answerString(value: unknown): string | null {
@@ -30,6 +35,7 @@ function answerString(value: unknown): string | null {
 async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise<FlowEvents> {
   const progress = new Map<string, FlowProgress>();
   const answers = new Map<string, Record<string, unknown>>();
+  const lastScreen = new Map<string, { screen: string; flow: FlowKey | null }>();
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('product_events')
@@ -44,11 +50,14 @@ async function loadFlowEvents(supabase: ReturnType<typeof adminClient>): Promise
       const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
       if (screen === PAYWALL_SCREEN_ID) progress.set(row.user_id, 'reached_paywall');
       else if (!progress.has(row.user_id)) progress.set(row.user_id, 'started');
+      if (row.name === 'onboarding_screen_view' && screen) {
+        lastScreen.set(row.user_id, { screen, flow: flowOfScreen(screen) ?? lastScreen.get(row.user_id)?.flow ?? null });
+      }
       if (row.name === 'onboarding_answer' && row.properties) {
         answers.set(row.user_id, { ...answers.get(row.user_id), ...row.properties });
       }
     }
-    if (rows.length < PAGE_SIZE) return { progress, answers };
+    if (rows.length < PAGE_SIZE) return { progress, answers, lastScreen };
   }
 }
 
@@ -73,7 +82,7 @@ interface ParentInviteRow {
 export async function loadUsers(): Promise<UserRecord[]> {
   const supabase = adminClient();
 
-  const [profilesRes, subsRes, intakeRes, parentRes, authRes, flowEvents, discountedSubIds] = await Promise.all([
+  const [profilesRes, subsRes, intakeRes, parentRes, authRes, flowEvents, stripeStates] = await Promise.all([
     supabase
       .from('user_profiles')
       .select(
@@ -86,14 +95,14 @@ export async function loadUsers(): Promise<UserRecord[]> {
     supabase
       .from('user_onboarding_intake')
       .select(
-        'user_id, completed, current_step_index, updated_at, phone_number, club_team, position, grad_year, parent_first_name, education_level, has_emailed_coaches, league_level, pro_aspiration, parent_invite_choice',
+        'user_id, completed, current_step_index, onboarding_step_id, updated_at, phone_number, club_team, position, grad_year, parent_first_name, education_level, has_emailed_coaches, league_level, pro_aspiration, parent_invite_choice',
       ),
     supabase.from('parent_invites').select('player_user_id, parent_email'),
     supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     loadFlowEvents(supabase),
-    loadFullyDiscountedSubscriptionIds().catch(err => {
-      console.error('Stripe discount lookup failed', err);
-      return new Set<string>();
+    loadSubscriptionStates().catch(err => {
+      console.error('Stripe subscription lookup failed', err);
+      return new Map<string, SubscriptionState>();
     }),
   ]);
 
@@ -139,8 +148,8 @@ export async function loadUsers(): Promise<UserRecord[]> {
   return profiles.map(profile => {
     const sub = subByUser.get(profile.user_id);
     const intake = intakeByUser.get(profile.user_id);
-    const fullyDiscounted = Boolean(sub?.stripe_subscription_id && discountedSubIds.has(sub.stripe_subscription_id));
-    const c = classifyUser(profile, sub, now, fullyDiscounted);
+    const stripe = sub?.stripe_subscription_id ? stripeStates.get(sub.stripe_subscription_id) : undefined;
+    const c = classifyUser(profile, sub, now, stripe?.fullyDiscounted ?? false, stripe);
 
     const isParent = profile.account_type === 'parent';
     const hasFullPlan = sub?.plan === 'full';
@@ -150,12 +159,23 @@ export async function loadUsers(): Promise<UserRecord[]> {
     const email = resolveEmail(profile);
     const lastSignInAt = lastSignInByUser.get(profile.user_id) ?? null;
 
-    const trialEndsAt = profile.trial_started_at
-      ? new Date(new Date(profile.trial_started_at).getTime() + trialLengthMs(profile.trial_days)).toISOString()
-      : null;
+    // Stripe runs the real trial (3 days on elite annual); the profile's trial_days stays at its default 7.
+    const trialStartedAt = profile.trial_started_at ?? stripe?.trialStartAt ?? null;
+    const trialEndsAt = stripe?.trialEndAt
+      ?? (profile.trial_started_at
+        ? new Date(new Date(profile.trial_started_at).getTime() + trialLengthMs(profile.trial_days)).toISOString()
+        : null);
+    const live = c.status === 'paying' || c.status === 'trialing';
+    // Lifetime was sold as a one time charge but sits on a monthly Stripe price, so the catalogue names it.
+    const lifetime = PLANS[sub?.payment_type ?? '']?.period === 'lifetime';
+    const label = (lifetime ? null : stripe?.priceLabel) ?? planLabel(sub?.payment_type);
 
-    const resolved =
-      onboarding === 'in_progress' && intake
+    // The current app saves the screen id it is on; the screen-view events say the same thing a moment later.
+    // Only the legacy wizard wrote a numeric step index into the old question catalogue.
+    const seen = flowEvents.lastScreen.get(profile.user_id);
+    const position = onboarding === 'in_progress' ? describeScreen(intake?.onboarding_step_id ?? seen?.screen ?? '', seen?.flow) : null;
+    const legacy =
+      onboarding === 'in_progress' && intake && !position
         ? resolveFromIntake(
             intake.current_step_index,
             {
@@ -168,6 +188,9 @@ export async function loadUsers(): Promise<UserRecord[]> {
             isParent,
           )
         : null;
+    const resolved = position
+      ? { stepIndex: position.index, stepId: position.id, label: position.label, chapter: position.chapter, chapterLabel: position.chapterLabel, kind: 'screen', totalSteps: position.total }
+      : legacy;
 
     return {
       id: profile.user_id,
@@ -195,11 +218,13 @@ export async function loadUsers(): Promise<UserRecord[]> {
             },
             now,
           ),
-      trialStartedAt: profile.trial_started_at,
+      trialStartedAt,
       trialEndsAt,
       paidAt: c.status === 'paying' || c.status === 'churned' ? sub?.paid_at ?? null : null,
       cancelledAt: c.status === 'churned' ? sub?.updated_at ?? null : null,
       paymentType: sub?.payment_type ?? null,
+      planLabel: label,
+      cancelsAt: live && stripe?.cancelAtPeriodEnd ? stripe.cancelAt : null,
       status: c.status,
       interval: c.interval,
       isParent,

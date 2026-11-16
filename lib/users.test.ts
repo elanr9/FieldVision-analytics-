@@ -26,6 +26,8 @@ function user(overrides: Partial<UserRecord>): UserRecord {
     paidAt: null,
     cancelledAt: null,
     paymentType: null,
+    planLabel: null,
+    cancelsAt: null,
     status: 'signed_up',
     interval: 'unknown',
     isParent: false,

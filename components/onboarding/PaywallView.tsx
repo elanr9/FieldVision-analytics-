@@ -35,22 +35,23 @@ function Step({ label, n, of, note, indent = 0, green, warn }: StepProps) {
 }
 
 export function PaywallView({ paywall: P }: PaywallViewProps) {
-  const W = P.wheel;
-  const paidTotal = P.plans.reduce((sum, p) => sum + p.paid, 0);
+  const W = P.wheel, PP = P.parent;
   const bestRate = Math.max(...P.plans.map(p => (p.trials ? p.paid / p.trials : 0)));
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <Hero label="Saw the paywall → paid" value={sharePct(paidTotal, P.seen)} accent caption={paidTotal + ' of ' + count(P.seen) + ' who hit the paywall · last 30 days'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: 'var(--amber-800)' }}><CountUp value={count(P.stalled10m)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>stalled 10 min+</p></div>} />
+      <Hero label="Saw the paywall → trial or paid" value={sharePct(P.converted, P.seen)} accent caption={count(P.converted) + ' of ' + count(P.seen) + ' who hit the paywall · last 30 days'} right={<div style={{ textAlign: 'right', flexShrink: 0 }}><p style={{ margin: 0, font: '700 18px/1.2 var(--font-sans)', fontVariantNumeric: 'tabular-nums', color: 'var(--amber-800)' }}><CountUp value={count(P.stalled10m)} /></p><p style={{ margin: 0, font: '600 10px/1.4 var(--font-sans)', textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--text-secondary)' }}>stalled 10 min+</p></div>} />
       <Card padding="none" style={{ overflow: 'hidden' }}>
         <div style={{ marginTop: -1 }}>
           <Step label="Saw the paywall" n={P.seen} note="% column = share of the row above it" />
-          <Step label="Started a trial right away" n={P.trialDirect} of={P.seen} indent={1} green />
-          <Step label="Closed the paywall" n={P.closed} of={P.seen} indent={1} warn />
-          <Step label="Landed on the wheel" n={W.entered} of={P.closed} indent={2} />
-          <Step label="Spun it" n={W.spun} of={W.entered} indent={2} />
-          <Step label="Saw the 90% off screen" n={W.offer90} of={W.spun} indent={2} />
-          <Step label="Started a trial from the offer" n={W.trial} of={W.offer90} indent={2} green />
-          <Step label="Paid after the offer" n={W.paid} of={W.trial} indent={2} green />
+          <Step label="Went to checkout" n={P.checkout} of={P.seen} indent={1} green note="$299 a year after a 3 day trial, or $49 a month" />
+          <Step label="Tapped Not now" n={P.closed} of={P.seen} indent={1} warn />
+          <Step label="Saw the deal wheel" n={W.entered} of={P.closed} indent={2} />
+          <Step label="Spun it" n={W.spun} of={W.entered} indent={2} note="$30 credit, then $150 on the second spin" />
+          <Step label="Went to checkout with the credit" n={W.checkout} of={W.spun} indent={2} green />
+          <Step label="Now trialing or paying" n={W.converted} of={W.checkout} indent={2} green />
+          <Step label="Asked a parent to pay" n={PP.asked} of={P.seen} indent={1} />
+          <Step label="Pay link sent" n={PP.sent} of={PP.asked} indent={2} />
+          <Step label="Parent paid" n={PP.paid} of={PP.sent} indent={2} green />
         </div>
       </Card>
       <div>
@@ -58,7 +59,7 @@ export function PaywallView({ paywall: P }: PaywallViewProps) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>{P.plans.map(p => <Mini key={p.key} label={p.label} value={sharePct(p.paid, p.trials)} sub={p.paid + ' of ' + p.trials + ' trials'} accent={p.trials > 0 && p.paid / p.trials === bestRate} />)}</div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
-        <Mini label="Wheel → paid" value={sharePct(W.paid, W.entered)} sub={count(W.paid) + ' paid of ' + count(W.entered) + ' who saw the wheel'} />
+        <Mini label="Wheel → checkout" value={sharePct(W.checkout, W.entered)} sub={count(W.checkout) + ' of ' + count(W.entered) + ' who saw the wheel'} />
         <Mini label="Cancel save offer" value={sharePct(P.save.accepted, P.save.shown)} sub={count(P.save.accepted) + ' of ' + count(P.save.shown) + ' took the free month'} />
       </div>
     </div>

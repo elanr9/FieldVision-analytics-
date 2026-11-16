@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import { sendPushToAll } from '@/lib/apns';
+import { PAYWALL_SCREENS as FLOW_PAYWALL_SCREENS } from '@/lib/funnel';
+import { planLabel as catalogPlanLabel, stripePriceLabel } from '@/lib/plans';
 import { stripeClient } from '@/lib/stripe-revenue';
 import {
   buildNotificationCopy,
@@ -31,26 +33,8 @@ interface FounderEvent {
   dedupeMinutes?: number;
 }
 
-const PAYWALL_SCREENS = new Set(['s37_paywall', 's37c_spin_wheel', 's38_one_time_offer']);
-
-/** Plan label per Stripe payment_type. Prices from the live Inkbound product. */
-const PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$20 monthly',
-  inkbound_annual: '$200 annual',
-  inkbound_basic_monthly: '$25 monthly',
-  inkbound_basic_annual: '$200 annual',
-  inkbound_elite_monthly: '$50 monthly',
-  inkbound_elite_annual: '$300 annual',
-  inkbound_elite_annual_promo: '$100 annual',
-  inkbound_elite_annual_promo_10: '$270 annual',
-  inkbound_quarterly: '$60 quarterly',
-  inkbound_weekly: '$10 weekly',
-  monthly_29_99: '$30 monthly',
-  yearly_240_trial: '$240 yearly',
-  lifetime_499: '$499 lifetime',
-};
+/** The paywall and the deal wheel that follows a "Not now". */
+const PAYWALL_SCREENS = new Set<string>([FLOW_PAYWALL_SCREENS.paywall, FLOW_PAYWALL_SCREENS.wheel]);
 
 function admin(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
@@ -72,9 +56,7 @@ function num(value: Json): number | null {
 }
 
 function planLabel(paymentType: Json): string | null {
-  const key = str(paymentType);
-  if (!key) return null;
-  return PLAN_LABELS[key] ?? key.replace(/^inkbound_/, '').replace(/_/g, ' ');
+  return catalogPlanLabel(str(paymentType));
 }
 
 /** "Thu 4:30pm" in Eastern time. */
@@ -146,18 +128,8 @@ function trialDays(sub: Stripe.Subscription): number | null {
   return Math.round((sub.trial_end - sub.trial_start) / 86_400);
 }
 
-const INTERVAL_WORDS: Record<string, string> = { day: 'daily', week: 'weekly', month: 'monthly', year: 'annual' };
-
-/** "$20 monthly" from the live Stripe price, so a price change can never leave a stale label. */
 function stripePlanLabel(sub: Stripe.Subscription): string | null {
-  const price = sub.items.data[0]?.price;
-  if (!price?.unit_amount || !price.recurring) return null;
-  const dollars = Math.round(price.unit_amount / 100);
-  const { interval, interval_count: count } = price.recurring;
-  if (interval === 'month' && count === 3) return `$${dollars} quarterly`;
-  if (interval === 'month' && count === 6) return `$${dollars} semester`;
-  if (count !== 1) return `$${dollars} every ${count} ${interval}s`;
-  return `$${dollars} ${INTERVAL_WORDS[interval] ?? interval}`;
+  return stripePriceLabel(sub.items.data[0]?.price);
 }
 
 async function fetchSubscription(id: string): Promise<Stripe.Subscription | null> {
@@ -227,7 +199,7 @@ async function productEvent(supabase: SupabaseClient, record: Row): Promise<Foun
   const screen = properties && typeof properties === 'object' ? str((properties as Row).screen) : null;
   if (!screen || !PAYWALL_SCREENS.has(screen)) return null;
 
-  if (screen === 's37_paywall') {
+  if (screen === FLOW_PAYWALL_SCREENS.paywall) {
     const n = await onboardingFinishedDaysAgo(supabase, userId);
     return { type: 'paywall', userId, vars: { n }, dedupeMinutes: 30 };
   }

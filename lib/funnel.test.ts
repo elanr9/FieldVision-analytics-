@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 import type { UserRecord } from './types';
 import { derivePaywallKeys, type ScreenEvent } from './onboarding-analytics';
 import { FLOW_SCREEN_DEFS, type FlowScreenDef } from './onboarding-flow.generated';
-import { flowScreens } from './onboarding-flow';
-import { buildFunnel, buildPaywall, buildPlans, PAYWALL_EVENTS, SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type FunnelStep } from './funnel';
+import { describeScreen, flowScreens } from './onboarding-flow';
+import { buildFunnel, buildPaywall, buildPlans, orderFunnels, PAYWALL_EVENTS, SUBSCRIBED_STEP_ID, TRIAL_STEP_ID, type FunnelStep } from './funnel';
 
 const NOW = new Date('2026-09-08T12:00:00');
 const range = { from: new Date('2026-08-09T12:00:00'), to: NOW };
@@ -20,6 +20,7 @@ interface UserOpts {
   excludedFromMetrics?: boolean;
   isParent?: boolean;
   onboarding?: UserRecord['onboarding'];
+  status?: UserRecord['status'];
 }
 
 function user(id: string, opts: UserOpts = {}): UserRecord {
@@ -41,7 +42,9 @@ function user(id: string, opts: UserOpts = {}): UserRecord {
     paidAt: opts.paidAt ?? null,
     cancelledAt: null,
     paymentType: opts.paymentType ?? null,
-    status: 'signed_up',
+    planLabel: null,
+    cancelsAt: null,
+    status: opts.status ?? 'signed_up',
     interval: 'unknown',
     isParent: opts.isParent ?? false,
     excludedFromMetrics: opts.excludedFromMetrics ?? false,
@@ -100,7 +103,7 @@ const events: ScreenEvent[] = [
 
 const eventUsers = new Map<string, Set<string>>([
   [PAYWALL_EVENTS.tryFreeViewed, new Set(['u1', 'u2', 'admin'])],
-  [PAYWALL_EVENTS.tryFreeTapped, new Set(['u1', 'u2', 'admin'])],
+  [PAYWALL_EVENTS.checkoutStarted, new Set(['u1', 'u2', 'admin'])],
 ]);
 
 const funnel = buildFunnel({ events, users, range });
@@ -234,30 +237,48 @@ test('generated flow mirror matches the athlete apps when their checkouts are pr
 test('paywall shares: nulls for missing events, plan split follows the trial cohort', () => {
   const paywall = buildPaywall({ users, eventUsers, range });
   assert.equal(paywall.seen, null);
-  assert.equal(paywall.trialDirect, 2);
+  assert.equal(paywall.converted, null);
+  assert.equal(paywall.checkout, 2);
   assert.equal(paywall.wheel.entered, null);
+  assert.deepEqual(paywall.parent, { asked: null, sent: null, paid: null });
   assert.equal(paywall.stalled10m, null);
   assert.deepEqual(paywall.save, { shown: null, accepted: null });
   assert.deepEqual(paywall.plans, [
     { key: 'inkbound_monthly', label: '$20 monthly', trials: 1, paid: 0 },
     { key: 'inkbound_semester', label: '$120 semester', trials: 1, paid: 1 },
-    { key: 'inkbound_offer', label: '$60 semester', trials: 0, paid: 0 },
+    { key: 'inkbound_elite_annual', label: '$299 annual', trials: 0, paid: 0 },
   ]);
+});
+
+test('paywall conversion counts people who saw it and then started a trial or paid, and wheel credits that stuck', () => {
+  const people = [
+    user('a', { trialStartedAt: IN_RANGE, status: 'trialing', paymentType: 'inkbound_elite_annual' }),
+    user('b', { paidAt: IN_RANGE, status: 'paying', paymentType: 'inkbound_elite_monthly' }),
+    user('c', {}),
+  ];
+  const seen = new Map<string, Set<string>>([
+    [PAYWALL_EVENTS.paywallViewed, new Set(['a', 'b', 'c'])],
+    [PAYWALL_EVENTS.creditCheckout, new Set(['a', 'c'])],
+  ]);
+  const paywall = buildPaywall({ users: people, eventUsers: seen, range });
+  assert.equal(paywall.seen, 3);
+  assert.equal(paywall.converted, 2);
+  assert.deepEqual(paywall.wheel, { entered: null, spun: null, checkout: 2, converted: 1 });
 });
 
 test('plan tiles follow the trial cohort: unknown payment types surface, most trials first, Inkbound plans fill the rest', () => {
   const legacy = [
-    user('a', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_weekly' }),
-    user('b', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_weekly', paidAt: IN_RANGE }),
+    user('a', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_biweekly' }),
+    user('b', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_biweekly', paidAt: IN_RANGE }),
     user('c', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_monthly' }),
     // Statuses stored in payment_type are not plans.
     user('d', { trialStartedAt: IN_RANGE, paymentType: 'canceled', paidAt: IN_RANGE }),
     user('e', { trialStartedAt: IN_RANGE, paymentType: 'inkbound_parent_pending' }),
   ];
   assert.deepEqual(buildPlans(legacy, range), [
-    { key: 'inkbound_weekly', label: 'Weekly', trials: 2, paid: 1 },
+    { key: 'inkbound_biweekly', label: 'Biweekly', trials: 2, paid: 1 },
     { key: 'inkbound_monthly', label: '$20 monthly', trials: 1, paid: 0 },
-    { key: 'inkbound_semester', label: '$120 semester', trials: 0, paid: 0 },
+    { key: 'inkbound_elite_annual', label: '$299 annual', trials: 0, paid: 0 },
   ]);
 });
 
@@ -266,12 +287,64 @@ test('derivePaywallKeys maps flow screen views and answers to funnel signals', (
   const answer = (screen: string, extra: Record<string, unknown> = {}) => ({ name: 'onboarding_answer', user_id: 'u1', properties: { screen, ...extra } });
   assert.deepEqual(derivePaywallKeys(view('s36_try_free')), [PAYWALL_EVENTS.tryFreeViewed]);
   assert.deepEqual(derivePaywallKeys(view('s37_paywall')), [PAYWALL_EVENTS.paywallViewed]);
+  assert.deepEqual(derivePaywallKeys(view('s37c_deal_wheel')), [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed]);
+  // The wheel's id before the redesign still counts.
   assert.deepEqual(derivePaywallKeys(view('s37c_spin_wheel')), [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed]);
-  assert.deepEqual(derivePaywallKeys(view('s38_one_time_offer')), [PAYWALL_EVENTS.offer90Viewed]);
-  assert.deepEqual(derivePaywallKeys(answer('s37_paywall', { plan: 'semester' })), [PAYWALL_EVENTS.tryFreeTapped, PAYWALL_EVENTS.checkoutStarted]);
+  assert.deepEqual(derivePaywallKeys(view('s37d_parent_pay')), [PAYWALL_EVENTS.parentAsked]);
+  assert.deepEqual(derivePaywallKeys(answer('s37_paywall', { plan: 'elite_annual', credit: null })), [PAYWALL_EVENTS.checkoutStarted]);
+  assert.deepEqual(derivePaywallKeys(answer('s37_paywall', { plan: 'elite_annual', credit: 150 })), [PAYWALL_EVENTS.checkoutStarted, PAYWALL_EVENTS.creditCheckout]);
   assert.deepEqual(derivePaywallKeys(answer('s37_paywall')), []);
-  assert.deepEqual(derivePaywallKeys(answer('s37c_spin_wheel', { spin: 1 })), [PAYWALL_EVENTS.wheelSpun]);
-  assert.deepEqual(derivePaywallKeys(answer('s38_one_time_offer', { plan: 'offer' })), [PAYWALL_EVENTS.offerTrialStarted, PAYWALL_EVENTS.checkoutStarted]);
+  assert.deepEqual(derivePaywallKeys(answer('s37c_deal_wheel', { credit: 30 })), [PAYWALL_EVENTS.wheelSpun]);
+  assert.deepEqual(derivePaywallKeys({ name: 'parent_pay_sent', user_id: 'u1', properties: {} }), [PAYWALL_EVENTS.parentAsked, PAYWALL_EVENTS.parentSent]);
+  assert.deepEqual(derivePaywallKeys({ name: 'parent_pay_paid', user_id: 'u1', properties: {} }), [PAYWALL_EVENTS.parentPaid]);
   assert.deepEqual(derivePaywallKeys({ name: 'retention_offer_accepted', user_id: 'u1', properties: {} }), [PAYWALL_EVENTS.saveOfferAccepted]);
   assert.deepEqual(derivePaywallKeys(view('s01_welcome')), []);
 });
+
+test('short flow: people are placed by the screens only it has, and the shared paywall tail follows them', () => {
+  const people = [
+    user('n1', { trialStartedAt: IN_RANGE, paidAt: IN_RANGE }),
+    user('n2'),
+    user('n3'),
+    user('c1'),
+  ];
+  const shortViews = (id: string, ...screens: string[]) => screens.map(screen => ({ userId: id, screen, kind: 'view' as const }));
+  const intake = ['n01_role', 'n02_gender', 'n03_grad_year', 'n04_journey', 'n05_videos', 'n06_commitment', 'n07_about_you', 'n08_verify_phone'];
+  const flowEvents = [
+    ...shortViews('n1', 'n00_welcome', ...intake, 'p01_next_steps', 'p02_cost_anchor', 's37_paywall'),
+    ...shortViews('n2', ...intake, 'p01_next_steps', 'p02_cost_anchor', 's37_paywall'),
+    ...shortViews('n3', ...intake, 'p01_next_steps'),
+    // A classic-flow athlete on the same paywall must not leak into the short funnel.
+    ...shortViews('c1', 's32_find_home', 's35_plan_ready', 's37_paywall'),
+  ];
+  const short = buildFunnel({ events: flowEvents, users: people, range, flow: 'short' });
+  const step = (id: string) => short.steps.find(s => s.id === id);
+  assert.equal(short.flow, 'short');
+  assert.equal(short.startedSource, 'welcome_screen');
+  assert.equal(short.started, 3);
+  // Only one of three landed on the welcome screen: an entry point, never a drop.
+  assert.equal(step('n00_welcome')?.reached, 1);
+  assert.equal(step('n00_welcome')?.dropped, null);
+  assert.equal(step('p02_cost_anchor')?.reached, 2);
+  assert.equal(step('p02_cost_anchor')?.dropped, 1);
+  assert.equal(step('s37_paywall')?.reached, 2);
+  assert.equal(step(SUBSCRIBED_STEP_ID)?.reached, 1);
+  assert.deepEqual(short.chapters.map(c => [c.key, c.enter, c.exit]), [['intake', 3, 3], ['pitch', 3, 2], ['paywall', 2, 1]]);
+
+  const classic = buildFunnel({ events: flowEvents, users: people, range, flow: 'classic' });
+  assert.equal(classic.started, 1);
+  assert.deepEqual(orderFunnels([classic, short]).map(f => f.flow), ['short', 'classic']);
+  assert.deepEqual(orderFunnels([buildFunnel({ events: [], users: people, range, flow: 'short' }), classic]).map(f => f.flow), ['classic']);
+});
+
+test('describeScreen places a saved screen id in its flow, the shared paywall by the flow the person came through', () => {
+  assert.deepEqual(pick(describeScreen('n07_about_you')), ['Name and phone', 'Quick intake']);
+  assert.deepEqual(pick(describeScreen('s20_gpa')), ['GPA', 'Your academics']);
+  assert.deepEqual(pick(describeScreen('s37_paywall', 'classic')), ['Paywall', 'Paywall']);
+  assert.equal(describeScreen('s37_paywall', 'classic')?.chapter, 'paywall');
+  assert.equal(describeScreen('gpa'), null);
+});
+
+function pick(p: { label: string; chapterLabel: string } | null): [string, string] | null {
+  return p ? [p.label, p.chapterLabel] : null;
+}

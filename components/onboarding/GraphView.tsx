@@ -68,7 +68,7 @@ export function GraphView({ funnel, selectedStep, zoomChapter, onSelectStep, onZ
           <p style={{ margin: 0, font: '700 13px/1.4 var(--font-sans)', color: 'var(--green-800)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{zc ? count(zc.exit) + ' of ' + count(zc.enter) + ' got through' : count(last.reached) + ' paid · ' + sharePct(last.reached, START)}</p>
         </div>
         <InkFunnelChart key={zoomChapter ?? 'all'} bars={zc ? stepBars : chapterBars} total={START} solidLabel={zc ? 'reached this step' : 'finished the chapter'} selected={selectedStep} onSelect={onBar} />
-        <p style={{ margin: '8px 0 0', font: '400 11px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>{'Full bar = all ' + START + ' ' + STARTED_NOUN[funnel.startedSource] + (zc ? ' · tap a step for details' : ' · tap a chapter to see its steps')}{funnel.untrackedSteps ? ' · ' + UNTRACKED_NOTE : ''}</p>
+        <p style={{ margin: '8px 0 0', font: '400 11px/1.5 var(--font-sans)', color: 'var(--text-tertiary)' }}>{'Full bar = all ' + START + ' ' + STARTED_NOUN[funnel.startedSource] + (zc ? ' · tap a step for details' : ' · tap a chapter to see its steps')}{funnel.startedSource === 'accounts_created' ? ' · ' + UNTRACKED_NOTE : ''}</p>
       </Card>
       {zc && s && <div key={s.id} style={{ animation: 'ink-fade var(--duration-base) var(--ease-out) both', display: 'grid', gap: 8 }}>
         <Card padding="wide">

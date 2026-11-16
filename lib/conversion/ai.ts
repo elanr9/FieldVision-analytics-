@@ -93,7 +93,7 @@ function model(): string {
   return process.env.OPENAI_MODEL ?? 'gpt-4o';
 }
 
-const SYSTEM_PROMPT = `You are the retention analyst for Inkbound, an app that helps youth soccer players get recruited by college coaches. Athletes go through a 38 screen onboarding flow, hit a paywall (s37_paywall, with a spin the wheel save offer s37c_spin_wheel and a one time offer s38_one_time_offer), start a 7 day free trial with a card on file, and either convert or leave. The app then sends coach emails on their behalf, tracks opens and replies, and makes highlight videos.
+const SYSTEM_PROMPT = `You are the retention analyst for Inkbound (formerly FieldVision), an app that helps youth soccer players get recruited by college coaches. Athletes go through an onboarding flow and hit a paywall (s37_paywall). Two flows exist and the data says which one each number comes from: the short flow (n00 to n11 intake, then the plan pitch p01_next_steps and p02_cost_anchor) and the full flow (s01 to s36b). The account is created partway through, at the verify phone screen, and visitors who leave before that leave no data at all. The paywall sells Inkbound Pro: $299 a year with a 3 day free trial and a card on file ($0 today), or $49 a month charged at checkout. Tapping Not now opens a deal wheel (s37c_deal_wheel) that wins a $30 credit on the first spin and $150 on the second, applied to the annual plan. An athlete can also send a pay link to a parent (s37d_parent_pay). Older subscribers are on earlier prices ($240 yearly with a 7 day trial, $30 monthly, $20 monthly, $200 annual). After paying, the app builds highlight videos, sends them and coach emails to the athlete's school list, tracks opens and replies, answers recruiting questions with Ask AI, and takes game film requests.
 
 You are given real data: the onboarding funnel screen by screen, paywall numbers, per athlete lifecycles with what they did during their trial, Stripe billing facts, and deterministic rule based verdicts.
 
@@ -177,7 +177,7 @@ const REPO_PROMPT_SCHEMA = {
 
 /** How the athlete apps are laid out, so repo prompts point at real places. */
 const REPO_CONTEXT = `The product code lives in two repos that share one Supabase project:
-- inkbound-web: Next.js 16 App Router, TypeScript. Onboarding flow in src/flow (flowConfig.ts, answers.ts, analytics.ts, sections/sectionN.tsx, screen ids like s37_paywall). App routes in src/app (onboarding, signup, login, parent, v). Feature code in src/features, shared UI in src/components, helpers in src/lib. Supabase edge functions in supabase/functions (stripe-webhook, inkbound-create-checkout, inkbound-confirm-checkout, inkbound-start-pro, cancel-subscription, resume-subscription, retention-offer, subscription-details, sync-subscription, billing-portal, send-coach-emails, auto-send-campaigns, campaign-followups, generate-next-campaign, send-notification-email, parent-invite-send, inkbound-parent-reminders, recruiting-chat, nl-school-search).
+- inkbound-web: Next.js 16 App Router, TypeScript. Onboarding flow in src/flow (flowConfig.ts, answers.ts, analytics.ts, sections/intake.tsx for the short flow, sections/sectionN.tsx for the full flow, sections/paywall.tsx for the pitch, paywall and deal wheel, screen ids like n07_about_you and s37_paywall; prices in src/lib/plans.ts and supabase/functions/_shared/stripe.ts). App routes in src/app (onboarding, signup, login, parent, v). Feature code in src/features, shared UI in src/components, helpers in src/lib. Supabase edge functions in supabase/functions (stripe-webhook, inkbound-create-checkout, inkbound-confirm-checkout, inkbound-start-pro, cancel-subscription, resume-subscription, retention-offer, subscription-details, sync-subscription, billing-portal, send-coach-emails, auto-send-campaigns, campaign-followups, generate-next-campaign, send-notification-email, parent-invite-send, inkbound-parent-reminders, recruiting-chat, nl-school-search).
 - inkbound-mobile: Expo 57, React Native 0.86, TypeScript. Same src/flow structure mirroring the web flow screen for screen, src/app for screens, src/components, src/lib, src/theme.
 - Analytics events are written to the product_events table (onboarding_screen_view, onboarding_answer, page_view, feature_use, outreach_compose_open, outreach_email_send, highlight_open, school_view). Subscriptions live in user_subscriptions, profiles in user_profiles, trial start in user_profiles.trial_started_at.
 Hard rule for any prompt: never modify edge functions or code related to highlight videos (video jobs, clips, video editor).`;
@@ -244,7 +244,7 @@ function n(value: number | null): string {
 function funnelBriefing(funnel: Funnel | undefined, paywall: Paywall | undefined): string[] {
   const lines: string[] = ['## Onboarding flow, screen by screen'];
   if (funnel) {
-    lines.push(`Started onboarding in range: ${funnel.started} (${funnel.startedSource === 'welcome_screen' ? 'saw the welcome screen' : 'accounts created with any flow event'}). Trials in range that converted: ${funnel.trialConverted}.`);
+    lines.push(`Flow: ${funnel.flowLabel} (the one most people started in range). Started onboarding in range: ${funnel.started} (${funnel.startedSource === 'welcome_screen' ? 'viewed the start screen and went on to create an account' : 'accounts created with any flow event'}). Trials in range that converted: ${funnel.trialConverted}.`);
     for (const ch of funnel.chapters) {
       lines.push(`Section ${ch.label}: enter ${n(ch.enter)}, exit ${n(ch.exit)}`);
       for (const s of ch.steps) {
@@ -259,7 +259,7 @@ function funnelBriefing(funnel: Funnel | undefined, paywall: Paywall | undefined
   }
   if (paywall) {
     lines.push('', '## Paywall');
-    lines.push(`Saw paywall ${n(paywall.seen)}, started trial directly ${n(paywall.trialDirect)}, closed paywall ${n(paywall.closed)}, entered wheel ${n(paywall.wheel.entered)}, spun ${n(paywall.wheel.spun)}, saw 90% offer ${n(paywall.wheel.offer90)}, offer trial ${n(paywall.wheel.trial)}, offer paid ${n(paywall.wheel.paid)}, idle 10 minutes on paywall ${n(paywall.stalled10m)}, save offer shown ${n(paywall.save.shown)}, accepted ${n(paywall.save.accepted)}.`);
+    lines.push(`Saw paywall ${n(paywall.seen)}, went to checkout ${n(paywall.checkout)}, started a trial or paid ${n(paywall.converted)}, tapped Not now ${n(paywall.closed)}, saw the deal wheel ${n(paywall.wheel.entered)}, spun it ${n(paywall.wheel.spun)}, went to checkout with a wheel credit ${n(paywall.wheel.checkout)}, of those now trialing or paying ${n(paywall.wheel.converted)}, asked a parent to pay ${n(paywall.parent.asked)}, pay link sent ${n(paywall.parent.sent)}, parent paid ${n(paywall.parent.paid)}, idle 10 minutes on paywall ${n(paywall.stalled10m)}, save offer shown ${n(paywall.save.shown)}, accepted ${n(paywall.save.accepted)}.`);
     lines.push(`Plan tiles: ${paywall.plans.map(p => `${p.label} ${p.trials} trials, ${p.paid} paid`).join('; ')}`);
   }
   return lines;
@@ -436,7 +436,7 @@ export interface AgentMessage {
   content: string;
 }
 
-const AGENT_SYSTEM_PROMPT = `You are Elan's product and go to market partner at Inkbound. Inkbound is a college soccer recruiting app: athletes onboard, start a 7 day trial with a card on file, then the app sends coach emails for them, tracks opens and replies, and makes highlight videos. Today the business is around $6k ARR with roughly 200 accounts. The product is strong; the two problems are that not enough athletes hear about it and small product leaks lose the ones who do.
+const AGENT_SYSTEM_PROMPT = `You are Elan's product and go to market partner at Inkbound. Inkbound is a college soccer recruiting app: athletes onboard, hit a paywall that sells Inkbound Pro at $299 a year with a 3 day free trial and a card on file or $49 a month charged at checkout (older subscribers are on earlier prices and a 7 day trial), then the app makes highlight videos, sends them and coach emails to the athlete's school list, and tracks opens and replies. The business is early; the data below carries the current revenue and account counts, so use those and never a remembered figure. The product is strong; the two problems are that not enough athletes hear about it and small product leaks lose the ones who do.
 
 You have the full conversion dataset below: funnel, onboarding screens, paywall, every trial with what the athlete did, Stripe billing facts, and rule based verdicts. Use it. Quote counts and names when they help. Never invent numbers.
 

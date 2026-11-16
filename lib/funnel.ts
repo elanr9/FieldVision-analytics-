@@ -1,25 +1,26 @@
 import type { ScreenEvent } from './onboarding-analytics';
 import type { FlowScreenDef } from './onboarding-flow.generated';
-import { FLOW_SECTIONS, flowScreens, sectionByNumber, type FlowScreen, type FlowSectionKey } from './onboarding-flow';
+import { FLOWS, FLOW_KEYS, PAYWALL_SECTION_KEY, exclusiveScreenIds, flowOfScreen, flowScreens, sectionByNumber, type FlowDef, type FlowKey, type FlowScreen, type FlowSectionKey } from './onboarding-flow';
+import { currentPlanKeys, isPlanKey, planLabel } from './plans';
 import type { UserRecord } from './types';
 
 /**
  * Paywall funnel signals. These are derived keys, not raw product_events names: the athlete app's
- * onboarding flow emits `onboarding_screen_view` / `onboarding_answer` with a `screen` property
- * (s36_try_free, s37_paywall, s37c_spin_wheel, s38_one_time_offer) and the retention offer edge
- * function emits `retention_offer_accepted`. See derivePaywallKeys in lib/onboarding-analytics.ts.
+ * onboarding flow emits `onboarding_screen_view` / `onboarding_answer` with a `screen` property, the parent
+ * pay function emits `parent_pay_*`, and the retention offer function emits `retention_offer_accepted`.
+ * See derivePaywallKeys in lib/onboarding-analytics.ts.
  */
 export const PAYWALL_EVENTS = {
   tryFreeViewed: 'try_free_viewed', // screen view s36_try_free
   paywallViewed: 'paywall_viewed', // screen view s37_paywall
-  tryFreeTapped: 'try_free_tapped', // answer on s37_paywall with a plan (trial started right away)
-  paywallClosed: 'paywall_closed', // left s37_paywall for the wheel (same people as wheel_viewed)
-  checkoutStarted: 'checkout_started', // any plan answer on s37_paywall or s38_one_time_offer
-  wheelViewed: 'wheel_viewed', // screen view s37c_spin_wheel
-  wheelSpun: 'wheel_spun', // answer on s37c_spin_wheel
-  offer90Viewed: 'offer_90_viewed', // screen view s38_one_time_offer
-  offerTrialStarted: 'offer_trial_started', // answer on s38_one_time_offer
-  offerPaid: 'offer_paid', // paying user on the inkbound_offer plan (from users, not events)
+  checkoutStarted: 'checkout_started', // plan answer on s37_paywall: the athlete went to Stripe checkout
+  paywallClosed: 'paywall_closed', // tapped "Not now" on the paywall, which opens the wheel
+  wheelViewed: 'wheel_viewed', // screen view of the deal wheel
+  wheelSpun: 'wheel_spun', // answer on the wheel: a $30 or $150 credit was won
+  creditCheckout: 'credit_checkout', // plan answer on s37_paywall carrying a wheel credit
+  parentAsked: 'parent_asked', // opened "ask a parent to pay" (s37d_parent_pay) or sent the link
+  parentSent: 'parent_sent', // parent_pay_sent: the pay link went out
+  parentPaid: 'parent_paid', // parent_pay_paid: the parent finished checkout
   paywallIdle10m: 'paywall_idle_10m', // analytics_notifications type stalled
   saveOfferShown: 'save_offer_shown', // churned in range or accepted the free month (no shown event exists)
   saveOfferAccepted: 'save_offer_accepted', // retention_offer_accepted
@@ -29,12 +30,12 @@ export const PAYWALL_EVENTS = {
 export const PAYWALL_SCREENS = {
   tryFree: 's36_try_free',
   paywall: 's37_paywall',
-  wheel: 's37c_spin_wheel',
-  offer: 's38_one_time_offer',
+  wheel: 's37c_deal_wheel',
+  parentPay: 's37d_parent_pay',
 } as const;
 
-/** Stripe payment_type of the one time offer plan. */
-export const OFFER_PAYMENT_TYPE = 'inkbound_offer';
+/** The wheel under its current id and the one it had before the redesign, so history still counts. */
+export const WHEEL_SCREENS: ReadonlySet<string> = new Set([PAYWALL_SCREENS.wheel, 's37c_spin_wheel']);
 
 /** One chapter per flow section; the last section is the paywall. */
 export type FunnelChapterKey = FlowSectionKey;
@@ -43,8 +44,8 @@ export type FunnelChapterKey = FlowSectionKey;
 export const TRIAL_STEP_ID = 'trial_started';
 export const SUBSCRIBED_STEP_ID = 'subscribed';
 
-/** The first flow screen; a view of it is what "started" means once the apps record screens before sign-in. */
-export const STARTED_SCREEN_ID = 's01_welcome';
+/** The classic flow's first screen. Each flow names its own in lib/onboarding-flow.ts (FLOWS[flow].startScreen). */
+export const STARTED_SCREEN_ID = FLOWS.classic.startScreen;
 
 export type StartedSource = 'welcome_screen' | 'accounts_created';
 
@@ -79,6 +80,9 @@ export interface Chapter {
 }
 
 export interface Funnel {
+  /** Which onboarding flow this funnel follows. */
+  flow: FlowKey;
+  flowLabel: string;
   steps: FunnelStep[];
   chapters: Chapter[];
   started: number;
@@ -93,7 +97,7 @@ export interface Funnel {
 }
 
 export interface PaywallPlan {
-  /** Stripe payment_type, e.g. inkbound_semester. */
+  /** Stripe payment_type, e.g. inkbound_elite_annual. */
   key: string;
   label: string;
   trials: number;
@@ -102,15 +106,26 @@ export interface PaywallPlan {
 
 export interface Paywall {
   seen: number | null;
-  trialDirect: number | null;
+  /** Picked a plan and went to Stripe checkout. */
+  checkout: number | null;
+  /** Tapped "Not now". The deal wheel opens next. */
   closed: number | null;
   wheel: {
     entered: number | null;
     spun: number | null;
-    offer90: number | null;
-    trial: number | null;
+    /** Went to checkout with a wheel credit applied. */
+    checkout: number | null;
+    /** Of those, now on a trial or paying. */
+    converted: number | null;
+  };
+  parent: {
+    /** Opened "ask a parent to pay". */
+    asked: number | null;
+    sent: number | null;
     paid: number | null;
   };
+  /** Started a trial or paid in range, among people who saw the paywall in range. */
+  converted: number | null;
   stalled10m: number | null;
   plans: PaywallPlan[];
   save: { shown: number | null; accepted: number | null };
@@ -120,36 +135,6 @@ export interface DateRange {
   from: Date;
   to: Date;
 }
-
-export const CHAPTER_ORDER: FunnelChapterKey[] = FLOW_SECTIONS.map(s => s.key);
-
-export const FUNNEL_CHAPTER_LABELS: Record<FunnelChapterKey, string> = Object.fromEntries(
-  FLOW_SECTIONS.map(s => [s.key, s.label]),
-) as Record<FunnelChapterKey, string>;
-
-export const FUNNEL_CHAPTER_SHORT: Record<FunnelChapterKey, string> = Object.fromEntries(
-  FLOW_SECTIONS.map(s => [s.key, s.short]),
-) as Record<FunnelChapterKey, string>;
-
-/** Inkbound plans shown in "Trial → paid by plan", keyed by Stripe payment_type. Prices from the live product. */
-export const PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$20 monthly',
-  inkbound_annual: '$200 annual',
-  inkbound_basic_monthly: '$25 monthly',
-  inkbound_basic_annual: '$200 annual',
-  inkbound_elite_monthly: '$50 monthly',
-  inkbound_elite_annual: '$300 annual',
-  inkbound_elite_annual_promo: '$100 annual',
-  inkbound_elite_annual_promo_10: '$270 annual',
-  inkbound_quarterly: 'Quarterly',
-  yearly_240_trial: '$240 yearly',
-  monthly_29_99: '$30 monthly',
-  lifetime_499: '$499 lifetime',
-  lifetime: '$499 lifetime',
-  one_time: '$499 lifetime',
-};
 
 export function rangeForDays(days: number, now: Date = new Date()): DateRange {
   return { from: new Date(now.getTime() - days * 24 * 60 * 60 * 1000), to: now };
@@ -185,16 +170,13 @@ function usersByScreen(events: ScreenEvent[], allowed: Set<string>): Map<string,
   return byScreen;
 }
 
-/** The account is created here, so nothing before it is recorded until the apps buffer pre-auth events. */
-const ACCOUNT_SCREEN_ID = 's31_verify_phone';
-
 /**
  * Whether the apps are really recording the screens before sign-in. A couple of returning users
- * replaying onboarding are enough to put rows on s01_welcome, which is not the same as the
+ * replaying onboarding are enough to put rows on the first screen, which is not the same as the
  * instrumentation working, so this asks the pre-auth stretch to be reporting broadly first.
  */
-function preAuthTracked(screens: FlowScreen[], byScreen: Map<string, Set<string>>): boolean {
-  const accountAt = screens.findIndex(s => s.id === ACCOUNT_SCREEN_ID);
+function preAuthTracked(flow: FlowDef, screens: FlowScreen[], byScreen: Map<string, Set<string>>): boolean {
+  const accountAt = screens.findIndex(s => s.id === flow.accountScreen);
   const preAuth = screens.slice(0, accountAt === -1 ? screens.length : accountAt);
   if (preAuth.length === 0) return false;
   const reporting = preAuth.filter(s => (byScreen.get(s.id)?.size ?? 0) > 0).length;
@@ -202,19 +184,20 @@ function preAuthTracked(screens: FlowScreen[], byScreen: Map<string, Set<string>
 }
 
 /**
- * Who started onboarding. The apps only write product_events once a user is signed in, and the account is
- * created mid-flow (s31_verify_phone), so until they record the screens before sign-in the honest count is
- * accounts created in range that have any flow event at all. Accounts made through the login form by
- * Google or email never saw these screens, so counting them would make every step look like a cliff.
- * Once the early screens are genuinely tracked the funnel switches to s01_welcome viewers on its own.
+ * Who started onboarding. The apps only write product_events once a user is signed in and the account is
+ * created mid-flow; they hold the earlier screens on the device and write them when the account exists.
+ * Where that works, "started" is everyone who viewed the flow's start screen. Where it does not, the honest
+ * count is accounts created in range that have any event in this flow. Either way a visitor who left before
+ * creating an account is invisible here: product_events has no anonymous rows.
  */
 function startedUsers(
+  flow: FlowDef,
   preAuthOk: boolean,
   byScreen: Map<string, Set<string>>,
   included: UserRecord[],
   range: DateRange,
 ): { users: Set<string>; source: StartedSource } {
-  const viewers = byScreen.get(STARTED_SCREEN_ID);
+  const viewers = byScreen.get(flow.startScreen);
   if (viewers && viewers.size > 0 && preAuthOk) {
     return { users: viewers, source: 'welcome_screen' };
   }
@@ -230,7 +213,9 @@ export interface BuildFunnelInput {
   events: ScreenEvent[];
   users: UserRecord[];
   range: DateRange;
-  /** Defaults to the generated mirror; tests pass a small list. */
+  /** Which flow to follow. Defaults to the classic flow. */
+  flow?: FlowKey;
+  /** Defaults to the flow's generated mirror; tests pass a small list. */
   defs?: FlowScreenDef[];
   /** Screen ids the apps have ever emitted, all time. Anything absent renders as "—" instead of a zero. */
   seenScreens?: Set<string>;
@@ -259,17 +244,18 @@ function countStarted(users: Set<string> | undefined, started: Set<string>): num
  * screens before the first one with events are treated as untracked.
  */
 function screenSteps(
+  flow: FlowDef,
+  screens: FlowScreen[],
   byScreen: Map<string, Set<string>>,
   started: Set<string>,
   source: StartedSource,
   preAuthOk: boolean,
-  defs?: FlowScreenDef[],
   seen?: Set<string>,
 ): MeasuredStep[] {
-  const screens = flowScreens(byScreen.keys(), defs);
   const firstTracked = screens.findIndex(s => (byScreen.get(s.id)?.size ?? 0) > 0);
-  const accountAt = screens.findIndex(s => s.id === ACCOUNT_SCREEN_ID);
+  const accountAt = screens.findIndex(s => s.id === flow.accountScreen);
   const preAuthEnd = accountAt === -1 ? 0 : accountAt;
+  const startAt = screens.findIndex(s => s.id === flow.startScreen);
   return screens.map((s, i) => {
     // Screens before the account exist only if the apps buffer pre-auth events, which either works
     // for the whole stretch or none of it. The few rows returning users leave behind are not coverage.
@@ -278,13 +264,14 @@ function screenSteps(
       : seen
         ? !seen.has(s.id)
         : firstTracked === -1 || i < firstTracked;
-    const isStart = s.id === STARTED_SCREEN_ID && source === 'welcome_screen';
-    const section = sectionByNumber(s.section);
+    const isStart = s.id === flow.startScreen && source === 'welcome_screen';
+    const section = sectionByNumber(s.section, flow.sections);
     return {
       id: s.id,
       label: s.label,
       chapter: section.key,
-      conditional: s.conditional,
+      // Anything ahead of the start screen is an entry point some people skip, never a drop.
+      conditional: s.conditional || i < startAt,
       known: s.known,
       reached: isStart ? started.size : untracked ? null : countStarted(byScreen.get(s.id), started),
     };
@@ -294,17 +281,18 @@ function screenSteps(
 /** Trial and paid come from account data, so they are always measured. */
 function accountSteps(started: Set<string>, included: UserRecord[], range: DateRange): MeasuredStep[] {
   const cohort = included.filter(u => started.has(u.id));
-  const paywall = FLOW_SECTIONS[FLOW_SECTIONS.length - 1].key;
+  const paywall = PAYWALL_SECTION_KEY;
   return [
     { id: TRIAL_STEP_ID, label: 'Started a free trial', chapter: paywall, conditional: false, known: true, reached: cohort.filter(u => isWithin(u.trialStartedAt, range)).length },
     { id: SUBSCRIBED_STEP_ID, label: 'Paid', chapter: paywall, conditional: false, known: true, reached: cohort.filter(u => isWithin(u.paidAt, range)).length },
   ];
 }
 
-function toFunnelSteps(measured: MeasuredStep[], started: number): FunnelStep[] {
+function toFunnelSteps(measured: MeasuredStep[], started: number, flow: FlowDef): FunnelStep[] {
   let previousReached = started;
+  const labels = new Map(flow.sections.map(sec => [sec.key, sec.label]));
   return measured.map(m => {
-    const base = { ...m, chapterLabel: FUNNEL_CHAPTER_LABELS[m.chapter] };
+    const base = { ...m, chapterLabel: labels.get(m.chapter) ?? m.chapter };
     if (m.reached === null) return { ...base, pct: null, dropped: null, dropPct: null };
     const pct = pct1(m.reached, started);
     if (m.conditional) return { ...base, pct, dropped: null, dropPct: null };
@@ -318,11 +306,12 @@ function toFunnelSteps(measured: MeasuredStep[], started: number): FunnelStep[] 
   });
 }
 
-export function buildChapters(steps: FunnelStep[]): Chapter[] {
-  return FLOW_SECTIONS.map(section => {
+export function buildChapters(steps: FunnelStep[], flow: FlowKey = 'classic'): Chapter[] {
+  return FLOWS[flow].sections.map(section => {
     const chapterSteps = steps.filter(s => s.chapter === section.key);
     // Arrivals are measured at the first tracked step; untracked leading screens carry no information.
-    const first = chapterSteps.find(s => s.reached !== null);
+    // An optional entry screen ahead of it (a welcome only some people land on) says nothing about arrivals either.
+    const first = chapterSteps.find(s => s.reached !== null && !s.conditional) ?? chapterSteps.find(s => s.reached !== null);
     const lastUnconditional = [...chapterSteps].reverse().find(s => !s.conditional) ?? chapterSteps[chapterSteps.length - 1];
     const exit = lastUnconditional?.reached ?? null;
     const entered = first?.reached == null ? null : first.reached + (first.dropped ?? 0);
@@ -339,26 +328,45 @@ export function buildChapters(steps: FunnelStep[]): Chapter[] {
 }
 
 export function buildFunnel(input: BuildFunnelInput): Funnel {
+  const flow = FLOWS[input.flow ?? 'classic'];
+  const defs = input.defs ?? flow.defs;
   const included = includedUsers(input.users);
-  const allowed = new Set(included.map(u => u.id));
-  const byScreen = usersByScreen(input.events, allowed);
-  const preAuthOk = preAuthTracked(flowScreens(byScreen.keys(), input.defs), byScreen);
-  const started = startedUsers(preAuthOk, byScreen, included, input.range);
+  // A person is in this flow once they touch a screen only it has. The paywall tail is shared, so on its
+  // own it says nothing about which flow brought them there.
+  const exclusive = input.defs ? null : exclusiveScreenIds(flow.key);
+  const members = new Set<string>();
+  for (const e of input.events) {
+    if (!exclusive || exclusive.has(e.screen) || flowOfScreen(e.screen) === flow.key) members.add(e.userId);
+  }
+  const allowed = new Set(included.filter(u => members.has(u.id)).map(u => u.id));
+  const events = input.events.filter(e => flow.accepts(e.screen) || defs.some(d => d.id === e.screen));
+  const byScreen = usersByScreen(events, allowed);
+  const screens = flowScreens(byScreen.keys(), defs, flow.accepts);
+  const preAuthOk = preAuthTracked(flow, screens, byScreen);
+  const started = startedUsers(flow, preAuthOk, byScreen, included, input.range);
   const measured = [
-    ...screenSteps(byScreen, started.users, started.source, preAuthOk, input.defs, input.seenScreens),
+    ...screenSteps(flow, screens, byScreen, started.users, started.source, preAuthOk, input.seenScreens),
     ...accountSteps(started.users, included, input.range),
   ];
-  const steps = toFunnelSteps(measured, started.users.size);
+  const steps = toFunnelSteps(measured, started.users.size, flow);
   const cohort = included.filter(u => started.users.has(u.id));
   return {
+    flow: flow.key,
+    flowLabel: flow.label,
     steps,
-    chapters: buildChapters(steps),
+    chapters: buildChapters(steps, flow.key),
     started: started.users.size,
     startedSource: started.source,
     unknownScreens: steps.filter(s => !s.known).map(s => s.id),
     untrackedSteps: steps.filter(s => s.reached === null).length,
     trialConverted: cohort.filter(u => isWithin(u.trialStartedAt, input.range) && u.paidAt !== null).length,
   };
+}
+
+/** The flow most people started in range leads; a flow nobody touched is left out unless both are empty. */
+export function orderFunnels(funnels: Funnel[]): Funnel[] {
+  const live = funnels.filter(f => f.started > 0).sort((a, b) => b.started - a.started);
+  return live.length > 0 ? live : funnels.slice(0, 1);
 }
 
 export interface BuildPaywallInput {
@@ -371,68 +379,70 @@ export interface BuildPaywallInput {
 /** Tiles shown in "Trial → paid by plan". */
 export const PLAN_TILES = 3;
 
-/** payment_type values the billing functions write as a status, not a plan (cancel-subscription, parent invites). */
-const NON_PLAN_PAYMENT_TYPES = /^(canceled|trial_expired)$|pending|expired/;
-
-function planLabel(paymentType: string): string {
-  const known = PLAN_LABELS[paymentType];
-  if (known) return known;
-  const words = paymentType.replace(/^inkbound_/, '').replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
 /**
  * Trial → paid per plan follows the trial cohort: people who started a trial in range, and how many of them have
  * paid. Plans come from the cohort's own Stripe payment_type values (most trials first) so a new price shows up on
- * its own; the current Inkbound plans fill any empty tiles.
+ * its own; the plans sold today fill any empty tiles.
  */
 export function buildPlans(included: UserRecord[], range: DateRange): PaywallPlan[] {
   const byPlan = new Map<string, UserRecord[]>();
   for (const u of included) {
     const key = u.paymentType;
-    if (key === null || NON_PLAN_PAYMENT_TYPES.test(key) || !isWithin(u.trialStartedAt, range)) continue;
+    if (!isPlanKey(key) || !isWithin(u.trialStartedAt, range)) continue;
     byPlan.set(key, [...(byPlan.get(key) ?? []), u]);
   }
   const keys = [...byPlan.keys()].sort((a, b) => (byPlan.get(b)?.length ?? 0) - (byPlan.get(a)?.length ?? 0) || a.localeCompare(b));
-  for (const key of Object.keys(PLAN_LABELS)) {
+  for (const key of currentPlanKeys()) {
     if (keys.length >= PLAN_TILES) break;
     if (!keys.includes(key)) keys.push(key);
   }
   return keys.slice(0, PLAN_TILES).map(key => {
     const trials = byPlan.get(key) ?? [];
-    return { key, label: planLabel(key), trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
+    return { key, label: planLabel(key) ?? key, trials: trials.length, paid: trials.filter(u => u.paidAt !== null).length };
   });
 }
 
 export function buildPaywall(input: BuildPaywallInput): Paywall {
   const included = includedUsers(input.users);
   const allowed = new Set(included.map(u => u.id));
-  const count = (event: string): number | null => {
+  const ids = (event: string): string[] | null => {
     const users = input.eventUsers.get(event);
-    return users ? [...users].filter(id => allowed.has(id)).length : null;
+    return users ? [...users].filter(id => allowed.has(id)) : null;
   };
-  const plans = buildPlans(included, input.range);
-  // Paid after the offer comes from subscriptions, not flow events.
-  const offerPaid = input.eventUsers.has(PAYWALL_EVENTS.offer90Viewed)
-    ? included.filter(u => u.paymentType === OFFER_PAYMENT_TYPE && u.status === 'paying' && isWithin(u.paidAt, input.range)).length
-    : null;
+  const count = (event: string): number | null => ids(event)?.length ?? null;
+  const byId = new Map(included.map(u => [u.id, u]));
+  const live = (id: string) => {
+    const status = byId.get(id)?.status;
+    return status === 'trialing' || status === 'paying';
+  };
+  const converted = (id: string) => {
+    const u = byId.get(id);
+    return u !== undefined && (isWithin(u.trialStartedAt, input.range) || isWithin(u.paidAt, input.range)) && u.status !== 'signed_up';
+  };
+  const seen = ids(PAYWALL_EVENTS.paywallViewed);
+  const credit = ids(PAYWALL_EVENTS.creditCheckout);
   // Nobody records "save offer shown"; the closest real denominator is everyone who reached the cancel flow:
   // churned in range plus those who took the free month instead.
   const accepted = count(PAYWALL_EVENTS.saveOfferAccepted);
   const churned = included.filter(u => u.status === 'churned' && isWithin(u.paidAt, input.range)).length;
   return {
-    seen: count(PAYWALL_EVENTS.paywallViewed),
-    trialDirect: count(PAYWALL_EVENTS.tryFreeTapped),
+    seen: seen?.length ?? null,
+    checkout: count(PAYWALL_EVENTS.checkoutStarted),
     closed: count(PAYWALL_EVENTS.paywallClosed),
     wheel: {
       entered: count(PAYWALL_EVENTS.wheelViewed),
       spun: count(PAYWALL_EVENTS.wheelSpun),
-      offer90: count(PAYWALL_EVENTS.offer90Viewed),
-      trial: count(PAYWALL_EVENTS.offerTrialStarted),
-      paid: offerPaid,
+      checkout: credit?.length ?? null,
+      converted: credit ? credit.filter(live).length : null,
     },
+    parent: {
+      asked: count(PAYWALL_EVENTS.parentAsked),
+      sent: count(PAYWALL_EVENTS.parentSent),
+      paid: count(PAYWALL_EVENTS.parentPaid),
+    },
+    converted: seen ? seen.filter(converted).length : null,
     stalled10m: count(PAYWALL_EVENTS.paywallIdle10m),
-    plans,
+    plans: buildPlans(included, input.range),
     save: { shown: accepted === null ? null : accepted + churned, accepted },
   };
 }
@@ -455,7 +465,8 @@ async function loadPaywallEventUsers(deps: Awaited<ReturnType<typeof loadDeps>>,
   return new Map([...byKey].filter(([key]) => seen.has(key)));
 }
 
-export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funnel> {
+/** One funnel per onboarding flow, the flow most people started in range first. */
+export async function loadFunnels(days = 30, users?: UserRecord[]): Promise<Funnel[]> {
   const deps = await loadDeps();
   const range = rangeForDays(days);
   const [allUsers, events, seenScreens] = await Promise.all([
@@ -463,7 +474,12 @@ export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funne
     deps.loadScreenEvents(range.from.toISOString(), range.to.toISOString()),
     deps.loadSeenScreenIds(),
   ]);
-  return buildFunnel({ events, users: allUsers, range, seenScreens });
+  return orderFunnels(FLOW_KEYS.map(flow => buildFunnel({ events, users: allUsers, range, seenScreens, flow })));
+}
+
+/** The funnel of the flow that is live: the one most people started in range. */
+export async function loadFunnel(days = 30, users?: UserRecord[]): Promise<Funnel> {
+  return (await loadFunnels(days, users))[0];
 }
 
 export async function loadPaywall(days = 30, users?: UserRecord[]): Promise<Paywall> {

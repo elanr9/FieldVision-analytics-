@@ -1,4 +1,4 @@
-import type { PlanInterval, UserRecord } from './types';
+import type { UserRecord } from './types';
 import type { DossierBackground, DossierCampaign, UserDossier } from './user-dossier';
 
 export type BackgroundChapterKey = 'basic' | 'checkin' | 'academic' | 'athletic' | 'goals';
@@ -116,35 +116,10 @@ function gradShort(gradYear: number | null): string | null {
   return gradYear ? `'${String(gradYear).slice(-2)}` : null;
 }
 
-/**
- * Human plan name. The amount only lives inside Stripe's payment_type slug
- * (monthly_29_99, yearly_240_trial, lifetime_499), so it is parsed from there.
- */
-/** Live Inkbound prices per Stripe payment_type. */
-const INKBOUND_PLAN_LABELS: Record<string, string> = {
-  inkbound_semester: '$120 semester',
-  inkbound_offer: '$60 semester',
-  inkbound_monthly: '$20 monthly',
-  inkbound_annual: '$200 annual',
-  inkbound_basic_monthly: '$25 monthly',
-  inkbound_basic_annual: '$200 annual',
-  inkbound_elite_monthly: '$50 monthly',
-  inkbound_elite_annual: '$300 annual',
-  inkbound_elite_annual_promo: '$100 annual',
-  inkbound_elite_annual_promo_10: '$270 annual',
-  inkbound_quarterly: '$60 quarterly',
-  inkbound_weekly: '$10 weekly',
-};
-
-export function planLabel(paymentType: string | null, interval: PlanInterval): string {
-  if (paymentType && INKBOUND_PLAN_LABELS[paymentType]) return INKBOUND_PLAN_LABELS[paymentType];
-  const priced = paymentType?.match(/^(?:monthly|yearly|lifetime)_(\d+)(?:_(\d{1,2}))?/);
-  if (priced) {
-    const dollars = Math.round(Number(priced[1]) + (priced[2] ? Number(`0.${priced[2]}`) : 0));
-    const word = interval === 'unknown' ? 'plan' : interval;
-    return `$${dollars} ${word}`;
-  }
-  if (interval !== 'unknown') return sentenceCase(interval);
+/** Human plan name for one account: the live Stripe price, else the catalogue, else the billing interval. */
+export function planLabel(user: Pick<UserRecord, 'planLabel' | 'interval'>): string {
+  if (user.planLabel) return user.planLabel;
+  if (user.interval !== 'unknown') return sentenceCase(user.interval);
   return 'Full plan';
 }
 
@@ -161,17 +136,17 @@ function nextChargeLine(user: UserRecord, now: Date): string {
 }
 
 export function buildPlanFact(user: UserRecord, now: Date): [string, string] {
-  const label = planLabel(user.paymentType, user.interval);
+  const label = planLabel(user);
   switch (user.status) {
     case 'trialing':
       return [
         `${label} · trial`,
         user.trialEndsAt
-          ? `Trial ends ${formatShortDay(user.trialEndsAt, now)} · ${formatUntil(user.trialEndsAt, now)}`
+          ? `Trial ends ${formatShortDay(user.trialEndsAt, now)} · ${user.cancelsAt ? 'cancelled, will not charge' : formatUntil(user.trialEndsAt, now)}`
           : 'Trial ends soon',
       ];
     case 'paying':
-      return [label, nextChargeLine(user, now)];
+      return [label, user.cancelsAt ? `Cancelled · access ends ${formatShortDay(user.cancelsAt, now)}` : nextChargeLine(user, now)];
     case 'churned':
       return [`${label} · cancelled`, user.cancelledAt ? `Cancelled ${formatAgo(user.cancelledAt, now)}` : 'Cancelled'];
     case 'trial_ended':
@@ -395,7 +370,7 @@ export function buildBackground(user: UserRecord, bg: DossierBackground | null, 
 export function buildProfile(user: UserRecord, dossier: UserDossier | null, now: Date = new Date(), lastCheckinAt: string | null = null): Profile {
   const checkinEligible = (user.status === 'paying' || user.status === 'trialing') && Boolean(user.phone);
   return {
-    planLabel: planLabel(user.paymentType, user.interval),
+    planLabel: planLabel(user),
     planFact: buildPlanFact(user, now),
     facts: buildFacts(user),
     checkinEligible,

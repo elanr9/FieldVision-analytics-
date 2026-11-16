@@ -29,7 +29,7 @@ function joined(iso: string): string {
 }
 
 const RIGHT: Record<UserStatus, (u: EveryoneRecord) => string> = {
-  paying: u => planLabel(u.paymentType, u.interval),
+  paying: u => planLabel(u),
   trialing: u => 'ends in ' + (u.trialEndsIn == null ? '—' : u.trialEndsIn + 'h'),
   churned: u => 'left ' + ago(u.cancelledAgo),
   trial_ended: u => 'ended ' + ago(u.trialEndedAgo),

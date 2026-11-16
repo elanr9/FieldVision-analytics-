@@ -35,6 +35,8 @@ function user(
     paidAt,
     cancelledAt: null,
     paymentType: null,
+    planLabel: null,
+    cancelsAt: null,
     status,
     interval: 'unknown',
     isParent: false,

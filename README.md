@@ -6,12 +6,19 @@ Internal analytics dashboard for Inkbound. Reads the production Supabase project
 
 Every user gets exactly one label, computed in `lib/classify.ts`:
 
-- **Paying** (monthly, annual, or lifetime): full plan backed by a real Stripe subscription, past the trial window, not flagged internal.
+- **Paying** (monthly, annual, or lifetime): full plan whose Stripe subscription is active or past due, not flagged internal. A row still marked full after Stripe ended the subscription is not paying.
 - **Comped**: has Pro access but never paid. Demo, ambassador, and admin accounts, plus full plans with no Stripe subscription and no recorded charge (manual grants and 100 percent off coupons).
-- **Trialing**: inside the 7 day trial window, no charge yet.
+- **Trialing**: Stripe says the subscription is trialing (3 days on the $299 annual plan). Without a Stripe subscription, inside the profile's trial window with no charge yet.
 - **Trial ended**: trial lapsed without converting.
 - **Signed up**: account created, never trialed or paid.
 - **Churned**: paid at some point, then canceled.
+
+## Keeping up with the athlete app
+
+- **Plans and prices** live in one file, `lib/plans.ts`, keyed by `user_subscriptions.payment_type`. A label read from the live Stripe price wins over it, so a price change shows up without an edit; update the file when a plan is added.
+- **Onboarding screens** are mirrored into `lib/onboarding-flow.generated.ts` by `npm run sync:flow`, which reads `../inkbound-web` at `origin/main` (what is deployed; override with `INKBOUND_WEB_REF`) and `../inkbound-mobile` from disk. Two flows are tracked, the short intake (`n00` … `n11`, `p01`, `p02`) and the full flow (`s01` … `s36b`), both ending on `s37_paywall`. The Onboarding tab leads with whichever flow most people started in the last 30 days. Run the sync after the app's flow changes; `npm test` fails when the mirror is stale.
+- **Usage** combines `product_events` with rows from the product's own tables (videos, video sends, campaign batches, Ask AI, game film), because the redesigned athlete dashboard writes no page events.
+- Visitors who leave onboarding before creating an account (the verify phone screen) write nothing to the database, so every funnel here starts at accounts created.
 
 ## Run locally
 

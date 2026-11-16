@@ -1,5 +1,7 @@
+import { cache } from 'react';
 import Stripe from 'stripe';
 import { dayKey } from './dates';
+import { stripePriceLabel } from './plans';
 
 export interface RevenueEvent {
   paidAt: string;
@@ -77,14 +79,58 @@ function isFullyDiscounted(sub: Stripe.Subscription): boolean {
   return (sub.discounts ?? []).some(d => typeof d !== 'string' && d.coupon?.percent_off === 100);
 }
 
-/**
- * Subscription IDs running on a 100 percent off coupon, e.g. internal testers.
- * Inkbound never records charge amounts, so only Stripe can tell these apart from real payers.
- */
-export async function loadFullyDiscountedSubscriptionIds(): Promise<Set<string>> {
-  const ids = new Set<string>();
+/** What Stripe says about one subscription right now. Supabase rows lag or omit all of this. */
+export interface SubscriptionState {
+  id: string;
+  /** metadata.user_id set by the checkout; null on subscriptions created by hand. */
+  userId: string | null;
+  status: Stripe.Subscription.Status;
+  /** Running on a 100 percent off coupon, e.g. an internal tester. */
+  fullyDiscounted: boolean;
+  hasDiscount: boolean;
+  trialStartAt: string | null;
+  trialEndAt: string | null;
+  /** Still active, but set to end when the paid period runs out. */
+  cancelAtPeriodEnd: boolean;
+  /** When access ends for a scheduled cancellation. */
+  cancelAt: string | null;
+  canceledAt: string | null;
+  /** "$299 annual" from the live price. */
+  priceLabel: string | null;
+  /** Monthly normalized amount in cents. */
+  mrrCents: number;
+  planType: string | null;
+  createdAt: string;
+}
+
+function unixIso(seconds: number | null | undefined): string | null {
+  return seconds ? new Date(seconds * 1000).toISOString() : null;
+}
+
+function toState(sub: Stripe.Subscription): SubscriptionState {
+  const periodEnd = sub.items.data[0]?.current_period_end ?? null;
+  return {
+    id: sub.id,
+    userId: sub.metadata?.user_id ?? null,
+    status: sub.status,
+    fullyDiscounted: isFullyDiscounted(sub),
+    hasDiscount: hasActiveDiscount(sub),
+    trialStartAt: unixIso(sub.trial_start),
+    trialEndAt: unixIso(sub.trial_end),
+    cancelAtPeriodEnd: sub.cancel_at_period_end,
+    cancelAt: unixIso(sub.cancel_at) ?? (sub.cancel_at_period_end ? unixIso(periodEnd) : null),
+    canceledAt: unixIso(sub.canceled_at) ?? unixIso(sub.ended_at),
+    priceLabel: stripePriceLabel(sub.items.data[0]?.price),
+    mrrCents: mrrFromSubscription(sub),
+    planType: sub.metadata?.plan_type ?? sub.metadata?.plan ?? null,
+    createdAt: new Date(sub.created * 1000).toISOString(),
+  };
+}
+
+async function listSubscriptionStates(): Promise<Map<string, SubscriptionState>> {
+  const states = new Map<string, SubscriptionState>();
   const stripe = stripeClient();
-  if (!stripe || keyProblem()) return ids;
+  if (!stripe || keyProblem()) return states;
   let startingAfter: string | undefined;
   for (let page = 0; page < 50; page++) {
     const batch = await stripe.subscriptions.list({
@@ -93,14 +139,19 @@ export async function loadFullyDiscountedSubscriptionIds(): Promise<Set<string>>
       starting_after: startingAfter,
       expand: ['data.discounts'],
     });
-    for (const sub of batch.data) {
-      if (isFullyDiscounted(sub)) ids.add(sub.id);
-    }
+    for (const sub of batch.data) states.set(sub.id, toState(sub));
     if (!batch.has_more || batch.data.length === 0) break;
     startingAfter = batch.data[batch.data.length - 1].id;
   }
-  return ids;
+  return states;
 }
+
+/**
+ * Every Stripe subscription, keyed by id. Inkbound never records charge amounts, trial ends or scheduled
+ * cancellations reliably, so only Stripe can say who is really trialing, paying or on the way out.
+ * One listing per request: the user loader and the revenue snapshot share it.
+ */
+export const loadSubscriptionStates = cache(listSubscriptionStates);
 
 async function listAllSucceededPaymentIntents(
   stripe: Stripe,
@@ -151,14 +202,6 @@ function mrrFromSubscription(sub: Stripe.Subscription): number {
 }
 
 /**
- * A past due subscriber who has already asked to cancel will not recover, so
- * Stripe drops them from MRR immediately instead of waiting for the cancel.
- */
-function isAbandoned(sub: Stripe.Subscription): boolean {
-  return sub.status === 'past_due' && sub.cancel_at_period_end;
-}
-
-/**
  * Loads Stripe revenue for the whole account. Cash collected comes from
  * succeeded PaymentIntents (matches Stripe gross volume). MRR follows the
  * Stripe Billing definition: active and past_due subscriptions, monthly
@@ -184,15 +227,9 @@ export async function loadRevenueSnapshot(
   }
 
   let paymentIntents: Stripe.PaymentIntent[];
-  let searchResult: Stripe.ApiSearchResult<Stripe.Subscription>;
+  let states: Map<string, SubscriptionState>;
   try {
-    [paymentIntents, searchResult] = await Promise.all([
-      listAllSucceededPaymentIntents(stripe),
-      stripe.subscriptions.search({
-        query: "status:'active' OR status:'past_due'",
-        limit: 100,
-      }),
-    ]);
+    [paymentIntents, states] = await Promise.all([listAllSucceededPaymentIntents(stripe), loadSubscriptionStates()]);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const key = cleanKey() ?? '';
@@ -205,7 +242,6 @@ export async function loadRevenueSnapshot(
       error: message + keyInfo,
     };
   }
-
   const events: RevenueEvent[] = [];
 
   for (const pi of paymentIntents) {
@@ -229,16 +265,16 @@ export async function loadRevenueSnapshot(
   let mrrCents = 0;
   let activeSubscriptionCount = 0;
 
-  for (const sub of searchResult.data) {
-    const userId = sub.metadata?.user_id;
-    if (userId && excludedUserIds.has(userId)) continue;
-    if (isLifetimePlan(sub.metadata?.plan_type)) continue;
-    if (hasActiveDiscount(sub)) continue;
-    if (isAbandoned(sub)) continue;
+  for (const sub of states.values()) {
+    if (sub.status !== 'active' && sub.status !== 'past_due') continue;
+    if (sub.userId && excludedUserIds.has(sub.userId)) continue;
+    if (isLifetimePlan(sub.planType)) continue;
+    if (sub.hasDiscount) continue;
+    // A past due subscriber who already asked to cancel will not recover; Stripe drops them from MRR too.
+    if (sub.status === 'past_due' && sub.cancelAtPeriodEnd) continue;
     activeSubscriptionCount++;
-    mrrCents += mrrFromSubscription(sub);
+    mrrCents += sub.mrrCents;
   }
-
   return {
     configured: true,
     mrrCents: mrrCents * TEMP_DISPLAY_MULTIPLIER,

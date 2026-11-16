@@ -175,3 +175,17 @@ test('the range filter anchors on trial start, or signup when there was no trial
   assert.equal(report.headline.candidates, 1);
   assert.equal(report.warnings[0].text.startsWith('STRIPE_SECRET_KEY'), true);
 });
+
+test('Stripe decides the label when it knows the subscription', () => {
+  const full = sub({ plan: 'full', payment_type: 'inkbound_elite_annual', stripe_subscription_id: 'sub_1' });
+  // Inside the profile's default 7 day window, but Stripe already ended the 3 day trial and charged.
+  const day5 = profile({ trial_started_at: new Date(NOW.getTime() - 5 * 86400000).toISOString() });
+  assert.equal(classifyUser(day5, full, NOW).status, 'trialing');
+  assert.equal(classifyUser(day5, full, NOW, false, { status: 'active' }).status, 'paying');
+  assert.equal(classifyUser(day5, full, NOW, false, { status: 'trialing' }).status, 'trialing');
+  // The row kept plan 'full' after a missed webhook; Stripe says the subscription is over.
+  assert.equal(classifyUser(profile(), full, NOW, false, { status: 'canceled' }).status, 'trial_ended');
+  assert.equal(classifyUser(profile(), { ...full, amount_cents: 29900 }, NOW, false, { status: 'canceled' }).status, 'churned');
+  // Internal flags still win.
+  assert.equal(classifyUser(profile({ is_demo: true }), full, NOW, false, { status: 'trialing' }).status, 'comped');
+});

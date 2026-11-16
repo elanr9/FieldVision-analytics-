@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { PAYWALL_EVENTS, PAYWALL_SCREENS } from './funnel';
+import { PAYWALL_EVENTS, PAYWALL_SCREENS, WHEEL_SCREENS } from './funnel';
 import { CHAPTER_LABELS, ONBOARDING_STEP_BY_ID, type OnboardingChapter } from './onboarding-steps';
 import type { UserRecord } from './types';
 
@@ -218,29 +218,30 @@ interface StalledRow {
   user_id: string;
 }
 
-const PAYWALL_EVENT_NAMES = ['onboarding_screen_view', 'onboarding_answer', 'retention_offer_accepted'];
+const PAYWALL_EVENT_NAMES = ['onboarding_screen_view', 'onboarding_answer', 'retention_offer_accepted', 'parent_pay_sent', 'parent_pay_paid'];
 
 /** Maps one raw flow event to the paywall funnel signals it proves. */
 export function derivePaywallKeys(row: PaywallEventRow): string[] {
   if (row.name === 'retention_offer_accepted') return [PAYWALL_EVENTS.saveOfferAccepted];
+  if (row.name === 'parent_pay_sent') return [PAYWALL_EVENTS.parentAsked, PAYWALL_EVENTS.parentSent];
+  if (row.name === 'parent_pay_paid') return [PAYWALL_EVENTS.parentPaid];
   const screen = typeof row.properties?.screen === 'string' ? row.properties.screen : null;
   if (!screen) return [];
   if (row.name === 'onboarding_screen_view') {
+    if (WHEEL_SCREENS.has(screen)) return [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed];
     switch (screen) {
       case PAYWALL_SCREENS.tryFree: return [PAYWALL_EVENTS.tryFreeViewed];
       case PAYWALL_SCREENS.paywall: return [PAYWALL_EVENTS.paywallViewed];
-      case PAYWALL_SCREENS.wheel: return [PAYWALL_EVENTS.wheelViewed, PAYWALL_EVENTS.paywallClosed];
-      case PAYWALL_SCREENS.offer: return [PAYWALL_EVENTS.offer90Viewed];
+      case PAYWALL_SCREENS.parentPay: return [PAYWALL_EVENTS.parentAsked];
       default: return [];
     }
   }
   if (row.name === 'onboarding_answer') {
-    const plan = typeof row.properties?.plan === 'string' ? row.properties.plan : null;
-    switch (screen) {
-      case PAYWALL_SCREENS.paywall: return plan ? [PAYWALL_EVENTS.tryFreeTapped, PAYWALL_EVENTS.checkoutStarted] : [];
-      case PAYWALL_SCREENS.wheel: return [PAYWALL_EVENTS.wheelSpun];
-      case PAYWALL_SCREENS.offer: return plan ? [PAYWALL_EVENTS.offerTrialStarted, PAYWALL_EVENTS.checkoutStarted] : [];
-      default: return [];
+    if (WHEEL_SCREENS.has(screen)) return [PAYWALL_EVENTS.wheelSpun];
+    if (screen === PAYWALL_SCREENS.paywall) {
+      if (typeof row.properties?.plan !== 'string') return [];
+      const credit = Number(row.properties?.credit);
+      return credit > 0 ? [PAYWALL_EVENTS.checkoutStarted, PAYWALL_EVENTS.creditCheckout] : [PAYWALL_EVENTS.checkoutStarted];
     }
   }
   return [];

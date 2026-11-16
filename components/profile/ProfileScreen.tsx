@@ -125,7 +125,7 @@ export function ProfileScreen({ user, focusCall, focusCheckin }: ProfileScreenPr
                 <p style={{ margin: '2px 0 0', font: '400 12px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}>{buildFacts(athlete) || 'No team on file'}</p>
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
                   <StatusBadge status={athlete.status} />
-                  {(athlete.status === 'paying' || athlete.status === 'trialing') && <span style={{ font: '400 12px var(--font-sans)', color: 'var(--text-secondary)' }}>{planLabel(athlete.paymentType, athlete.interval)}</span>}
+                  {(athlete.status === 'paying' || athlete.status === 'trialing') && <span style={{ font: '400 12px var(--font-sans)', color: 'var(--text-secondary)' }}>{planLabel(athlete)}</span>}
                 </div>
               </div>
               <span style={{ color: 'var(--text-tertiary)', fontSize: 22, lineHeight: 1 }}>›</span>
