@@ -97,7 +97,7 @@ export interface SubscriptionState {
   canceledAt: string | null;
   /** "$299 annual" from the live price. */
   priceLabel: string | null;
-  /** Monthly normalized amount in cents. */
+  /** Monthly normalized amount in cents, after discounts that last past the next renewal. */
   mrrCents: number;
   planType: string | null;
   createdAt: string;
@@ -187,15 +187,40 @@ function monthsPerPeriod(recurring: Stripe.Price.Recurring): number | null {
   }
 }
 
-/** Monthly normalized amount in cents, floored the same way Stripe does. */
-function mrrFromSubscription(sub: Stripe.Subscription): number {
+/**
+ * Share of the list price still charged at the next renewal. A discount that runs out before then
+ * (a one month credit on an annual plan) only lowered the first invoice, so it leaves recurring
+ * revenue alone; one that lasts (forever, or past the renewal) lowers it.
+ */
+function lastingDiscount(sub: Stripe.Subscription): { percentOff: number; amountOff: number } {
+  const renewsAt = sub.items.data[0]?.current_period_end ?? 0;
+  let percentOff = 0;
+  let amountOff = 0;
+  for (const d of sub.discounts ?? []) {
+    if (typeof d === 'string') continue;
+    if (d.end && d.end <= renewsAt) continue;
+    const coupon = d.coupon;
+    if (!coupon) continue;
+    if (coupon.percent_off) percentOff = 100 - ((100 - percentOff) * (100 - coupon.percent_off)) / 100;
+    else if (coupon.amount_off) amountOff += coupon.amount_off;
+  }
+  return { percentOff, amountOff };
+}
+
+/** Monthly normalized amount in cents after lasting discounts, floored the same way Stripe does. */
+export function mrrFromSubscription(sub: Stripe.Subscription): number {
+  const { percentOff, amountOff } = lastingDiscount(sub);
   let mrr = 0;
+  let amountOffLeft = amountOff;
   for (const item of sub.items.data) {
     const price = item.price;
     if (!price?.unit_amount || !price.recurring) continue;
     const months = monthsPerPeriod(price.recurring);
     if (months === null) continue;
-    const amount = price.unit_amount * (item.quantity ?? 1);
+    let amount = price.unit_amount * (item.quantity ?? 1) * (1 - percentOff / 100);
+    const taken = Math.min(amount, amountOffLeft);
+    amount -= taken;
+    amountOffLeft -= taken;
     mrr += Math.floor(amount / months);
   }
   return mrr;
@@ -205,7 +230,8 @@ function mrrFromSubscription(sub: Stripe.Subscription): number {
  * Loads Stripe revenue for the whole account. Cash collected comes from
  * succeeded PaymentIntents (matches Stripe gross volume). MRR follows the
  * Stripe Billing definition: active and past_due subscriptions, monthly
- * normalized, ignoring lifetime plans and 100% discounted subscriptions.
+ * normalized, ignoring lifetime plans and 100% discounted subscriptions. Partly
+ * discounted subscriptions count at what they will actually renew for.
  */
 export async function loadRevenueSnapshot(
   excludedUserIds: Set<string>,
@@ -269,7 +295,8 @@ export async function loadRevenueSnapshot(
     if (sub.status !== 'active' && sub.status !== 'past_due') continue;
     if (sub.userId && excludedUserIds.has(sub.userId)) continue;
     if (isLifetimePlan(sub.planType)) continue;
-    if (sub.hasDiscount) continue;
+    // Only a 100 percent coupon means nobody pays. A partial discount is still a paying customer.
+    if (sub.fullyDiscounted || sub.mrrCents <= 0) continue;
     // A past due subscriber who already asked to cancel will not recover; Stripe drops them from MRR too.
     if (sub.status === 'past_due' && sub.cancelAtPeriodEnd) continue;
     activeSubscriptionCount++;
